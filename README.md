@@ -1,2 +1,7 @@
-# interview-preparation
-this contains all the resource for the  11th hour preparation of the interview.
+Welcome! This repository contains examples in various programming languages.
+
+## 📂 JavaScript
+[View JavaScript Examples](./javascript/README.md)
+
+## 📂 TypeScript
+[View TypeScript Examples](./typescript/README.md)
