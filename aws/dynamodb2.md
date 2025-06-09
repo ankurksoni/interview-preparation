@@ -169,8 +169,6 @@ const nextPage = await dynamo.send(new QueryCommand({
 
 Below are frequently asked interview questions on DynamoDB pagination and indexing, with clear labels for questions and answers:
 
-## 🧠 Interview Q&A on DynamoDB Pagination, LSI, and GSI
-
 **QUESTION:** What is the default data size limit for a single DynamoDB query or scan?  
 **ANSWER:** 1 MB of data per request. If more data is available, DynamoDB returns a `LastEvaluatedKey` for pagination.
 
