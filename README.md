@@ -9,10 +9,13 @@ Welcome! This repository contains interview preparation material in various prog
 ## 📂 Node.js
 [Node.js Interview Questions & Answers](./nodejs/README.md)
 
-## 📂 AWS DynamoDB
-[DynamoDB Deep Dive - Indexing, Design & Querying Patterns](./aws/dynamodb1.md)
+## 📂 MongoDB
+[MongoDB Interview Questions & Answers](./db/mongodb/README.md)
 
-[DynamoDB Deep Dive - Pagination](./aws/dynamodb2.md)
+## 📂 AWS
+- [DynamoDB Deep Dive](./aws/dynamodb1/README.md)
+- [DynamoDB Querying Patterns](./aws/dynamodb2/README.md)
+- [AWS Lambda](./aws/lambda/README.md)
 
 ## 📂 OWASP Top 10
 [OWASP Top 10 with TypeScript Examples](./OWASP/README.md)
