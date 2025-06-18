@@ -1,554 +1,726 @@
-## 100 Node.js Interview Questions & Answers for Mid-Senior to Architect-Level Engineers
+Below is a README containing Q&A for Node.js interview questions, ranging from medium to high difficulty, with a code sample for each. The questions cover core Node.js concepts, asynchronous programming, performance optimization, security, and advanced topics like streams, clustering, and microservices.
 
-This README provides a comprehensive list of 100 well-curated Node.js questions and answers covering essential runtime concepts, performance tuning, internals, new features in LTS versions (v18 & v20+), architectural decisions, advanced debugging, and common pitfalls. Ideal for revising before interviews at senior or architect-level roles.
+## 1. What is the Event Loop in Node.js, and how does it work?
+**Answer**: The Event Loop is the core mechanism in Node.js that handles asynchronous operations. It processes events in phases: timers, pending callbacks, idle/prepare, poll, check, and close. It ensures non-blocking I/O by delegating tasks to the libuv thread pool and processing callbacks when they’re ready.
 
-All answers include practical examples, APIs, and in-code explanations.
+**Code Sample**:
+```javascript
+setTimeout(() => console.log('Timer'), 0);
+setImmediate(() => console.log('Immediate'));
+Promise.resolve().then(() => console.log('Promise'));
+console.log('Sync');
+// Output: Sync -> Promise -> Immediate -> Timer
+```
 
 ---
 
-### 1. **What is the event loop in Node.js? How does it work?**
-```js
-setTimeout(() => console.log('timeout'), 0); // Scheduled in timer phase
-Promise.resolve().then(() => console.log('promise')); // Microtask queue, runs after sync
-console.log('sync'); // Runs first
-// Output: sync -> promise -> timeout
-```
+## 2. How does Node.js handle asynchronous operations differently from synchronous ones?
+**Answer**: Node.js uses callbacks, Promises, or async/await for asynchronous operations, leveraging the Event Loop to avoid blocking the main thread. Synchronous operations execute immediately, blocking further execution until complete.
 
-### 2. **Explain phases of the event loop.**
-- Timers → Pending callbacks → Idle/Prepare → Poll → Check → Close callbacks.
-- `setTimeout` executes in Timers, `setImmediate` in Check, I/O callbacks in Poll.
-
-### 3. **What is the difference between `process.nextTick()`, `setImmediate()`, and `setTimeout()`?**
-```js
-process.nextTick(() => console.log('nextTick')); // Highest priority
-setTimeout(() => console.log('timeout'), 0);     // Timer phase
-setImmediate(() => console.log('immediate'));    // Check phase
-```
-- Order: `nextTick` > `Promise` > `setTimeout` ≈ `setImmediate` depending on context.
-
-### 4. **What is libuv in Node.js?**
-- A C-based library used to handle the event loop, asynchronous operations, and thread pool management.
-
-### 5. **Explain the thread pool in Node.js.**
-```js
-process.env.UV_THREADPOOL_SIZE = 8; // Default = 4
-```
-- Handles async operations like `fs`, `crypto`, `dns`, and `zlib`.
-
-### 6. **What is the difference between synchronous and asynchronous functions?**
-- Sync blocks the thread, async lets other tasks run in the meantime (non-blocking).
-
-### 7. **How does async/await work in Node.js?**
-```js
-async function fetchData() {
-  const data = await getFromDb(); // pauses execution until resolved
-  console.log(data);
+**Code Sample**:
+```javascript
+const fs = require('fs').promises;
+async function readFileAsync() {
+  try {
+    const data = await fs.readFile('file.txt', 'utf8');
+    console.log(data);
+  } catch (err) {
+    console.error(err);
+  }
 }
+readFileAsync();
 ```
 
-### 8. **How is Node.js single-threaded yet non-blocking?**
-- Event loop handles concurrency with libuv’s thread pool offloading blocking ops.
+---
 
-### 9. **Explain the use of `cluster` module.**
-```js
+## 3. What are Streams in Node.js, and when should you use them?
+**Answer**: Streams are objects that allow reading or writing data in chunks, useful for handling large datasets or real-time data. They come in four types: Readable, Writable, Duplex, and Transform. Use streams for memory efficiency with large files or data processing.
+
+**Code Sample**:
+```javascript
+const fs = require('fs');
+const readStream = fs.createReadStream('largeFile.txt');
+readStream.on('data', (chunk) => console.log(`Received ${chunk.length} bytes`));
+readStream.on('end', () => console.log('Finished reading'));
+```
+
+---
+
+## 4. How can you handle errors in asynchronous code in Node.js?
+**Answer**: Use try-catch with async/await, `.catch()` with Promises, or error-first callbacks. For unhandled Promise rejections, use `process.on('unhandledRejection')`.
+
+**Code Sample**:
+```javascript
+process.on('unhandledRejection', (err) => console.error('Unhandled:', err));
+async function fetchData() {
+  try {
+    await Promise.reject(new Error('Failed'));
+  } catch (err) {
+    console.error(err.message);
+  }
+}
+fetchData();
+```
+
+---
+
+## 5. What is the difference between `require` and `import` in Node.js?
+**Answer**: `require` is CommonJS, synchronous, and used in older Node.js modules. `import` is ES Modules (ESM), asynchronous, and supports tree-shaking. ESM is the modern standard but requires `"type": "module"` in `package.json`.
+
+**Code Sample**:
+```javascript
+// CommonJS
+const fs = require('fs');
+// ESM
+import fs from 'fs';
+console.log(fs);
+```
+
+---
+
+## 6. How does Node.js handle child processes, and what are the use cases?
+**Answer**: Node.js uses the `child_process` module to spawn, fork, or execute child processes. Use cases include running CPU-intensive tasks, executing shell commands, or parallelizing work.
+
+**Code Sample**:
+```javascript
+const { spawn } = require('child_process');
+const ls = spawn('ls', ['-lh']);
+ls.stdout.on('data', (data) => console.log(`Output: ${data}`));
+ls.on('error', (err) => console.error(err));
+```
+
+---
+
+## 7. What is middleware in Express, and how do you create custom middleware?
+**Answer**: Middleware in Express is a function that processes requests in the request-response cycle. It can modify requests, responses, or terminate the cycle. Custom middleware is created as a function with `req`, `res`, and `next` parameters.
+
+**Code Sample**:
+```javascript
+const express = require('express');
+const app = express();
+const logger = (req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+};
+app.use(logger);
+app.get('/', (req, res) => res.send('Hello'));
+app.listen(3000);
+```
+
+---
+
+## 8. How can you improve the performance of a Node.js application?
+**Answer**: Use clustering, caching (e.g., Redis), load balancing, asynchronous code, streams for large data, and optimize database queries. Profile with tools like `clinic.js` to identify bottlenecks.
+
+**Code Sample**:
+```javascript
 const cluster = require('cluster');
 const http = require('http');
-
-if (cluster.isPrimary) {
-  for (let i = 0; i < 4; i++) cluster.fork();
+const numCPUs = require('os').cpus().length;
+if (cluster.isMaster) {
+  for (let i = 0; i < numCPUs; i++) cluster.fork();
 } else {
-  http.createServer((req, res) => res.end('hello')).listen(3000);
-}
-```
-- Allows full CPU core utilization via multiple worker processes.
-
-### 10. **What is the difference between `spawn`, `exec`, and `fork` in `child_process`?**
-```js
-const { exec, spawn, fork } = require('child_process');
-exec('ls', (err, stdout) => console.log(stdout));       // buffer output
-spawn('ls', ['-lh']).stdout.pipe(process.stdout);       // stream output
-fork('worker.js');                                      // runs a new Node.js process
-```
-
-### 11. **How does Node.js handle file I/O asynchronously?**
-- Offloads to libuv thread pool, avoids blocking the event loop.
-
-### 12. **Difference between `fs.readFile` and `fs.readFileSync`?**
-```js
-const fs = require('fs');
-fs.readFile('file.txt', 'utf8', (err, data) => {}); // non-blocking
-const data = fs.readFileSync('file.txt', 'utf8');   // blocking
-```
-
-### 13. **What are streams in Node.js?**
-- Interfaces for working with data piece-by-piece (e.g., file reading).
-```js
-fs.createReadStream('file.txt').pipe(process.stdout);
-```
-
-### 14. **How to handle backpressure in writable streams?**
-```js
-if (!writable.write(chunk)) {
-  readable.pause();
-  writable.once('drain', () => readable.resume());
+  http.createServer((req, res) => res.end('Hello')).listen(3000);
 }
 ```
 
-### 15. **What is a buffer?**
-```js
-const buf = Buffer.from('hello');
-console.log(buf.toString()); // 'hello'
-```
-- Used for binary data manipulation.
+---
 
-### 16. **How to compress files in Node.js?**
-```js
-const zlib = require('zlib');
-fs.createReadStream('input.txt')
-  .pipe(zlib.createGzip())
-  .pipe(fs.createWriteStream('input.txt.gz'));
+## 9. What is the purpose of the `package.json` file in a Node.js project?
+**Answer**: `package.json` defines project metadata, dependencies, scripts, and configuration. It enables reproducible builds and dependency management with npm or Yarn.
+
+**Code Sample**:
+```json
+{
+  "name": "my-app",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.17.1"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}
 ```
 
-### 17. **What is middleware in Express?**
-```js
-app.use((req, res, next) => {
-  console.log('Logging...');
-  next(); // pass control
+---
+
+## 10. How do you handle environment variables in Node.js?
+**Answer**: Use `process.env` to access environment variables. Store them in a `.env` file and load with the `dotenv` package for security and portability.
+
+**Code Sample**:
+```javascript
+require('dotenv').config();
+console.log(process.env.DB_HOST);
+```
+
+---
+
+## 11. What is the difference between `setTimeout`, `setImmediate`, and `process.nextTick`?
+**Answer**: `setTimeout` schedules a callback after a delay, `setImmediate` runs after the poll phase, and `process.nextTick` runs before the next Event Loop iteration. `nextTick` has the highest priority.
+
+**Code Sample**:
+```javascript
+setTimeout(() => console.log('Timeout'), 0);
+setImmediate(() => console.log('Immediate'));
+process.nextTick(() => console.log('NextTick'));
+// Output: NextTick -> Immediate -> Timeout
+```
+
+---
+
+## 12. How can you secure a Node.js application?
+**Answer**: Use helmets for HTTP headers, sanitize inputs, use parameterized queries for SQL, implement JWT for authentication, and rate-limit APIs. Regularly update dependencies.
+
+**Code Sample**:
+```javascript
+const express = require('express');
+const helmet = require('helmet');
+const app = express();
+app.use(helmet());
+app.get('/', (req, res) => res.send('Secure'));
+app.listen(3000);
+```
+
+---
+
+## 13. What is the `cluster` module in Node.js, and how does it work?
+**Answer**: The `cluster` module allows Node.js to utilize multiple CPU cores by forking worker processes. The master process distributes incoming connections to workers.
+
+**Code Sample**:
+```javascript
+const cluster = require('cluster');
+if (cluster.isMaster) {
+  cluster.fork();
+} else {
+  require('http').createServer((req, res) => res.end('Worker')).listen(3000);
+}
+```
+
+---
+
+## 14. How do you handle file uploads in a Node.js application?
+**Answer**: Use middleware like `multer` to handle multipart/form-data for file uploads. Store files on disk or in cloud storage like S3.
+
+**Code Sample**:
+```javascript
+const express = require('express');
+const multer = require('multer');
+const upload = multer({ dest: 'uploads/' });
+const app = express();
+app.post('/upload', upload.single('file'), (req, res) => res.send('Uploaded'));
+app.listen(3000);
+```
+
+---
+
+## 15. What are Promises in Node.js, and how do they differ from callbacks?
+**Answer**: Promises represent the eventual completion of an asynchronous operation, offering `.then()` and `.catch()` for handling. They avoid callback hell and provide cleaner error handling compared to callbacks.
+
+**Code Sample**:
+```javascript
+const promise = new Promise((resolve, reject) => {
+  setTimeout(() => resolve('Done'), 1000);
+});
+promise.then((result) => console.log(result)).catch((err) => console.error(err));
+```
+
+---
+
+## 16. How does Node.js handle DNS resolution?
+**Answer**: Node.js uses the `dns` module for DNS resolution, leveraging libuv for asynchronous lookups. It supports methods like `dns.lookup` and `dns.resolve`.
+
+**Code Sample**:
+```javascript
+const dns = require('dns');
+dns.lookup('example.com', (err, address) => {
+  if (err) console.error(err);
+  console.log(`Address: ${address}`);
 });
 ```
-- Functions that execute in order for each request.
 
-### 18. **Difference between `req.params`, `req.query`, and `req.body`?**
-- `params`: URL path variables, `query`: query string, `body`: payload (POST/PUT)
+---
 
-### 19. **How to make HTTP requests in Node.js?**
-```js
+## 17. What is the purpose of the `buffer` module in Node.js?
+**Answer**: The `buffer` module handles binary data, useful for streams, file operations, or network protocols. Buffers are fixed-size chunks of memory outside the V8 heap.
+
+**Code Sample**:
+```javascript
+const buf = Buffer.from('Hello');
+console.log(buf.toString('hex')); // Output: 48656c6c6f
+```
+
+---
+
+## 18. How can you implement rate limiting in a Node.js application?
+**Answer**: Use middleware like `express-rate-limit` to restrict the number of requests per IP over a time window, preventing abuse or DDoS attacks.
+
+**Code Sample**:
+```javascript
+const express = require('express');
+const rateLimit = require('express-rate-limit');
+const app = express();
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
+app.get('/', (req, res) => res.send('Hello'));
+app.listen(3000);
+```
+
+---
+
+## 19. What is the difference between `fork` and `spawn` in the `child_process` module?
+**Answer**: `fork` creates a new Node.js process with an IPC channel, ideal for running JavaScript files. `spawn` launches any command-line process, offering more flexibility but no built-in IPC.
+
+**Code Sample**:
+```javascript
+const { fork } = require('child_process');
+const child = fork('child.js');
+child.send('Hello');
+child.on('message', (msg) => console.log(`Child: ${msg}`));
+```
+
+---
+
+## 20. How do you implement WebSockets in Node.js?
+**Answer**: Use the `ws` library or `Socket.IO` for real-time bidirectional communication. WebSockets are ideal for chat apps, live updates, or gaming.
+
+**Code Sample**:
+```javascript
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 8080 });
+wss.on('connection', (ws) => {
+  ws.on('message', (msg) => ws.send(`Echo: ${msg}`));
+});
+```
+
+---
+
+## 21. What is the `async_hooks` module, and when is it used?
+**Answer**: The `async_hooks` module tracks asynchronous resources, useful for debugging or monitoring async operations. It’s advanced and typically used in diagnostics tools.
+
+**Code Sample**:
+```javascript
+const asyncHooks = require('async_hooks');
+const hook = asyncHooks.createHook({
+  init(asyncId, type) {
+    console.log(`Init ${type}: ${asyncId}`);
+  }
+});
+hook.enable();
+setTimeout(() => {}, 1000);
+```
+
+---
+
+## 22. How do you handle large JSON payloads in Node.js?
+**Answer**: Use streams to process large JSON data incrementally with libraries like `JSONStream`. Avoid loading the entire payload into memory.
+
+**Code Sample**:
+```javascript
+const JSONStream = require('JSONStream');
+const fs = require('fs');
+const stream = fs.createReadStream('large.json').pipe(JSONStream.parse('*'));
+stream.on('data', (data) => console.log(data));
+```
+
+---
+
+## 23. What is the difference between `http` and `https` modules in Node.js?
+**Answer**: The `http` module handles HTTP requests, while `https` handles secure HTTPS requests using TLS/SSL. `https` requires certificates for encryption.
+
+**Code Sample**:
+```javascript
 const https = require('https');
-https.get('https://api.example.com', res => {
-  res.on('data', chunk => console.log(chunk.toString()));
+const fs = require('fs');
+const options = {
+  key: fs.readFileSync('key.pem'),
+  cert: fs.readFileSync('cert.pem')
+};
+https.createServer(options, (req, res) => res.end('Secure')).listen(443);
+```
+
+---
+
+## 24. How can you optimize database queries in a Node.js application?
+**Answer**: Use connection pooling, indexes, parameterized queries, and caching. Libraries like `knex` or ORMs like `Sequelize` help optimize queries.
+
+**Code Sample**:
+```javascript
+const { Pool } = require('pg');
+const pool = new Pool({ user: 'user', database: 'db' });
+pool.query('SELECT * FROM users WHERE id = $1', [1], (err, res) => {
+  console.log(res.rows);
 });
 ```
 
-### 20. **Difference between `Promise.all`, `Promise.allSettled`, and `Promise.race`?**
-```js
-await Promise.all([...]);         // fails fast
-await Promise.allSettled([...]);  // waits all
-await Promise.race([...]);        // first settles wins
-```
-
-<!-- QUESTIONS 21–90 WOULD GO HERE IN THE SAME DETAILED STYLE -->
-
-### 91. **What’s new in Node.js v20 (LTS)?**
-- Permission Model (experimental), WebCrypto stability, import.meta.resolve sync.
-
-### 92. **How does the `permission model` in Node 20 work?**
-```bash
-node --experimental-permission --allow-fs-read=./data app.js
-```
-- Restricts access to fs/network/env for better sandboxing.
-
-### 93. **What is `import.meta.resolve` and how is it used?**
-```js
-console.log(import.meta.resolve('./file.js'));
-```
-
-### 94. **How is `fetch` implemented in Node.js v18+?**
-```js
-const res = await fetch('https://api.github.com');
-const data = await res.json();
-```
-- Powered by `undici` — now globally available.
-
-### 95. **What are edge runtimes vs Node.js?**
-- Edge runtimes (e.g., Vercel, Deno) are sandboxed.
-- Node.js provides full system access (fs, process, child_process).
-
-### 96. **What is `diagnostics_channel` used for?**
-```js
-const dc = require('diagnostics_channel');
-const ch = dc.channel('app:log');
-ch.subscribe((msg) => console.log('Telemetry:', msg));
-```
-
-### 97. **What are `worker_threads`?**
-```js
-const { Worker } = require('worker_threads');
-new Worker('./cpu-intensive-task.js');
-```
-- Enables parallelism via native threads.
-
-### 98. **ESM vs CommonJS in Node.js?**
-```js
-// ESM
-import fs from 'node:fs/promises';
-// CJS
-const fs = require('fs');
-```
-- ESM is modern & async; CJS is legacy and synchronous.
-
-### 99. **Why use `node:fs/promises`?**
-```js
-import { readFile } from 'node:fs/promises';
-const data = await readFile('file.txt', 'utf8');
-```
-- Clean async/await usage without callback hell.
-
-### 100. **How to debug performance issues in Node.js?**
-- Tools: `--inspect`, Chrome DevTools, `clinic.js`, `0x`, `flamegraph`, `heapdump`.
-
-## Stream-Based Node.js Interview Questions (101–120)
-
-These 20 stream-based questions help reinforce deep understanding of Node.js I/O and high-performance systems design.
-
 ---
 
-### 101. **What is a stream in Node.js?**
-- Streams are abstract interfaces for working with streaming data in chunks.
-- Types: Readable, Writable, Duplex, Transform.
+## 25. What is the purpose of the `os` module in Node.js?
+**Answer**: The `os` module provides system-related information like CPU count, memory, or platform. It’s useful for system monitoring or clustering.
 
----
-
-### 102. **How to create a readable stream from a file?**
-```js
-const fs = require('fs');
-const readStream = fs.createReadStream('file.txt');
-readStream.on('data', chunk => console.log(chunk.toString()));
-```
-- Reads data in chunks instead of loading all into memory.
-
----
-
-### 103. **How to create a writable stream?**
-```js
-const fs = require('fs');
-const writeStream = fs.createWriteStream('output.txt');
-writeStream.write('Hello, world!');
-writeStream.end();
-```
-- Writes data incrementally to avoid memory overhead.
-
----
-
-### 104. **What is piping in streams?**
-```js
-fs.createReadStream('input.txt')
-  .pipe(fs.createWriteStream('output.txt'));
-```
-- Connects readable stream to writable stream and handles backpressure automatically.
-
----
-
-### 105. **What is backpressure in streams?**
-- Happens when a writable stream cannot consume data as fast as it’s being written.
-- Solution: `pause()` and `resume()` or use `.pipe()`.
-
----
-
-### 106. **How to handle stream errors?**
-```js
-readStream.on('error', err => console.error('Read error:', err));
-writeStream.on('error', err => console.error('Write error:', err));
-```
-- Always attach error listeners to avoid crashing.
-
----
-
-### 107. **How to create a transform stream?**
-```js
-const { Transform } = require('stream');
-const upper = new Transform({
-  transform(chunk, enc, cb) {
-    cb(null, chunk.toString().toUpperCase());
-  }
-});
-process.stdin.pipe(upper).pipe(process.stdout);
-```
-- Modify data mid-stream.
-
----
-
-### 108. **What is a duplex stream?**
-- A stream that is both readable and writable.
-- Example: TCP socket, zlib compression.
-
----
-
-### 109. **How does `.pause()` and `.resume()` work in streams?**
-- `.pause()` stops `data` events temporarily; `.resume()` resumes them.
-```js
-stream.pause(); // stops reading temporarily
-stream.resume(); // resumes reading
+**Code Sample**:
+```javascript
+const os = require('os');
+console.log(`CPUs: ${os.cpus().length}, Free Memory: ${os.freemem()}`);
 ```
 
 ---
 
-### 110. **How to monitor stream `finish` and `end` events?**
-```js
-writeStream.on('finish', () => console.log('Done writing'));
-readStream.on('end', () => console.log('Done reading'));
-```
-- `finish`: all data written. `end`: no more data to read.
+## 26. How do you implement authentication in a Node.js application?
+**Answer**: Use JWT or OAuth for token-based authentication. Libraries like `passport` simplify integrating strategies like local, Google, or GitHub auth.
 
----
-
-### 111. **How to throttle a stream?**
-- Use a Transform stream with controlled delay.
-```js
-const throttle = new Transform({
-  transform(chunk, enc, cb) {
-    setTimeout(() => cb(null, chunk), 100); // 100ms delay
-  }
-});
-readStream.pipe(throttle).pipe(writeStream);
+**Code Sample**:
+```javascript
+const jwt = require('jsonwebtoken');
+const token = jwt.sign({ userId: 1 }, 'secret', { expiresIn: '1h' });
+console.log(token);
 ```
 
 ---
 
-### 112. **What is `highWaterMark` in streams?**
-```js
-fs.createReadStream('file.txt', { highWaterMark: 1024 }); // 1KB chunks
+## 27. What are microservices, and how can Node.js support them?
+**Answer**: Microservices are independent, modular services communicating via APIs. Node.js supports them with lightweight frameworks like Express and tools like Docker or Kafka.
+
+**Code Sample**:
+```javascript
+const express = require('express');
+const app = express();
+app.get('/service', (req, res) => res.json({ status: 'Up' }));
+app.listen(3001);
 ```
-- Controls internal buffer size; affects flow behavior.
 
 ---
 
-### 113. **How to consume a stream with async/await?**
-```js
-const fs = require('fs');
-async function readChunks() {
-  const stream = fs.createReadStream('data.txt');
-  for await (const chunk of stream) {
-    console.log(chunk.toString());
-  }
+## 28. How do you handle memory leaks in Node.js?
+**Answer**: Use tools like `heapdump` or `--inspect` to profile memory. Avoid global variables, unclosed streams, or unhandled Promises. Monitor with `process.memoryUsage()`.
+
+**Code Sample**:
+```javascript
+console.log(process.memoryUsage());
+setInterval(() => {
+  console.log(process.memoryUsage().heapUsed / 1024 / 1024, 'MB');
+}, 1000);
+```
+
+---
+
+## 29. What is the `crypto` module in Node.js, and how is it used?
+**Answer**: The `crypto` module provides cryptographic functions like hashing, encryption, or signing. It’s used for secure data handling or password hashing.
+
+**Code Sample**:
+```javascript
+const crypto = require('crypto');
+const hash = crypto.createHash('sha256').update('password').digest('hex');
+console.log(hash);
+```
+
+---
+
+## 30. How do you implement caching in a Node.js application?
+**Answer**: Use in-memory caching with `node-cache` or distributed caching with Redis. Cache frequently accessed data to reduce database load.
+
+**Code Sample**:
+```javascript
+const NodeCache = require('node-cache');
+const cache = new NodeCache({ stdTTL: 100 });
+cache.set('key', 'value');
+console.log(cache.get('key'));
+```
+
+---
+
+## 31. What is the difference between `EventEmitter` and `process` events?
+**Answer**: `EventEmitter` is a class for custom event handling, while `process` events handle system-level events like `exit` or `uncaughtException`.
+
+**Code Sample**:
+```javascript
+const EventEmitter = require('events');
+const emitter = new EventEmitter();
+emitter.on('event', () => console.log('Triggered'));
+emitter.emit('event');
+```
+
+---
+
+## 32. How do you handle CORS in a Node.js application?
+**Answer**: Use the `cors` middleware in Express to enable Cross-Origin Resource Sharing, allowing controlled access to APIs from different domains.
+
+**Code Sample**:
+```javascript
+const express = require('express');
+const cors = require('cors');
+const app = express();
+app.use(cors());
+app.get('/', (req, res) => res.send('CORS enabled'));
+app.listen(3000);
+```
+
+---
+
+## 33. What is the `worker_threads` module, and when is it used?
+**Answer**: The `worker_threads` module enables multi-threading in Node.js for CPU-intensive tasks, unlike the single-threaded Event Loop.
+
+**Code Sample**:
+```javascript
+const { Worker, isMainThread } = require('worker_threads');
+if (isMainThread) {
+  new Worker(__filename);
+} else {
+  console.log('Worker running');
 }
 ```
-- Leverages async iterator protocol.
 
 ---
 
-### 114. **How does `pipeline()` from `stream/promises` help?**
-```js
-const { pipeline } = require('stream/promises');
-await pipeline(fs.createReadStream('in.txt'), fs.createWriteStream('out.txt'));
-```
-- Handles piping + error handling + cleanup in one async call.
+## 34. How do you implement a REST API in Node.js?
+**Answer**: Use Express to define routes, handle HTTP methods, and process requests/responses. Follow REST principles like statelessness and resource-based URLs.
 
----
-
-### 115. **How to combine multiple transform streams?**
-```js
-readable
-  .pipe(transform1)
-  .pipe(transform2)
-  .pipe(writable);
-```
-- Each transform stream modifies the data as it flows.
-
----
-
-### 116. **How to convert stream to string or buffer?**
-```js
-let data = '';
-stream.on('data', chunk => data += chunk);
-stream.on('end', () => console.log('Full string:', data));
+**Code Sample**:
+```javascript
+const express = require('express');
+const app = express();
+app.use(express.json());
+app.get('/users/:id', (req, res) => res.json({ id: req.params.id }));
+app.listen(3000);
 ```
 
 ---
 
-### 117. **How to handle gzip compression in stream?**
-```js
+## 35. What is the purpose of the `zlib` module in Node.js?
+**Answer**: The `zlib` module provides compression and decompression, useful for reducing data size in HTTP responses or file operations.
+
+**Code Sample**:
+```javascript
 const zlib = require('zlib');
-fs.createReadStream('in.txt')
+const input = 'Hello';
+zlib.gzip(input, (err, compressed) => console.log(compressed.toString('base64')));
+```
+
+---
+
+## 36. How do you handle versioning in a Node.js API?
+**Answer**: Use URL versioning (e.g., `/v1/resource`), headers, or query parameters. URL versioning is the most common for simplicity.
+
+**Code Sample**:
+```javascript
+const express = require('express');
+const app = express();
+app.get('/v1/users', (req, res) => res.send('Version 1'));
+app.listen(3000);
+```
+
+---
+
+## 37. What is the `Transform` stream, and how is it used?
+**Answer**: A `Transform` stream modifies data as it passes through, like compressing or parsing. It’s both readable and writable.
+
+**Code Sample**:
+```javascript
+const { Transform } = require('stream');
+const upperCaseTr = new Transform({
+  transform(chunk, encoding, callback) {
+    this.push(chunk.toString().toUpperCase());
+    callback();
+  }
+});
+process.stdin.pipe(upperCaseTr).pipe(process.stdout);
+```
+
+---
+
+## 38. How do you debug a Node.js application in production?
+**Answer**: Use logging with `winston`, monitor with Prometheus, or debug remotely with `--inspect`. Avoid `console.log` in production for performance.
+
+**Code Sample**:
+```javascript
+const winston = require('winston');
+const logger = winston.createLogger({
+  transports: [new winston.transports.File({ filename: 'app.log' })]
+});
+logger.info('App started');
+```
+
+---
+
+## 39. What is the difference between Node.js ` and Deno?
+**Answer**: Node.js uses CommonJS and npm, while Deno uses ESM, TypeScript, and has built-in security and tools. Node.js has a larger ecosystem.
+
+**Code Sample** (Node.js):
+```javascript
+const http = require('http');
+http.createServer((req, res) => res.end('Hello')).listen(3000);
+```
+
+---
+
+## 40. How do you handle graceful shutdown in Node.js?
+**Answer**: Listen for `SIGTERM` or `SIGINT`, close connections, and exit cleanly to prevent data loss or corruption.
+
+**Code Sample**:
+```javascript
+const http = require('http');
+const server = http.createServer((req, res) => res.end('Hello'));
+server.listen(3000);
+process.on('SIGTERM', () => {
+  server.close(() => process.exit(0));
+});
+```
+
+---
+
+## 41. What is GraphQL, and how can it be implemented in Node.js?
+**Answer**: GraphQL is a query language for APIs, allowing clients to request specific data. **Use Apollo Server** or `graphql-yoga` in Node.js for implementation.
+
+**Code Sample**:
+```javascript
+const { createSchema, createYoga } = require('graphql-yoga');
+const schema = createSchema({
+    typeDefs: `
+    type Query {
+      hello: String
+    }
+  `,
+    resolvers: {
+        Query: {
+            hello: () => 'Hello'
+        }
+    }
+});
+const yoga = createYoga({ schema });
+yoga.createServer().listen(3000);
+```
+
+---
+
+## 42. How do you implement pagination in a Node.js API?
+**Answer**: Use query parameters like `page` and `offset` or cursor-based pagination for scalability. Return metadata with total items.
+
+**Code Sample**:
+```javascript
+const express = require('express');
+const app = express();
+app.get('/items', (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = 10;
+  const offset = (page - 1) * limit;
+  res.json({ items: [], total: 100, page, limit });
+});
+app.listen(3000);
+```
+
+---
+
+## 43. What is the `vm` module in Node.js, and when is it used?
+**Answer**: The `vm` module runs JavaScript in a sandboxed context, useful for executing untrusted code or testing scripts safely.
+
+**Code Sample**:
+```javascript
+const vm = require('vm');
+const script = new vm.Script('result = 1 + 1');
+const context = { result: 0 };
+script.runInContext(vm.createContext(context));
+console.log(context.result); // Output: 2
+```
+
+---
+
+## 44. How do you handle long-polling in Node.js?
+**Answer**: Use timeouts to keep HTTP connections open until data is available or the request times out. WebSockets are preferred for real-time.
+
+**Code Sample**:
+```javascript
+const express = require('express');
+const app = express();
+app.get('/poll', (req, res) => {
+  setTimeout(() => res.send('Data'), 5000);
+});
+app.listen(3000);
+```
+
+---
+
+## 45. What is the purpose of the `path` module in Node.js?
+**Answer**: The `path` module handles file paths, ensuring cross-platform compatibility for operations like joining or resolving paths.
+
+**Code Sample**:
+```javascript
+const path = require('path');
+console.log(path.join(__dirname, 'file.txt'));
+```
+
+---
+
+## 46. How do you implement a message queue in Node.js?
+**Answer**: Use libraries like `bull` (Redis-based) or `kafkajs` for message queues to handle background jobs or inter-service communication.
+
+**Code Sample**:
+```javascript
+const Queue = require('bull');
+const queue = new Queue('my-queue');
+queue.add({ task: 'process' });
+queue.process((job) => console.log(job.data));
+```
+
+---
+
+## 47. What is the difference between `global` and `process` in Node.js?
+**Answer**: `global` is the global namespace for variables, while `process` is an object providing information about the current Node.js process.
+
+**Code Sample**:
+```javascript
+global.myVar = 'test';
+console.log(process.argv, global.myVar);
+```
+
+---
+
+## 48. How do you handle file compression in Node.js?
+**Answer**: Use the `zlib` module or libraries like `archiver` to compress files or streams, often for backups or downloads.
+
+**Code Sample**:
+```javascript
+const fs = require('fs');
+const zlib = require('zlib');
+fs.createReadStream('file.txt')
   .pipe(zlib.createGzip())
-  .pipe(fs.createWriteStream('in.txt.gz'));
-```
-- Streaming compression without fully loading the file.
-
----
-
-### 118. **What’s the difference between flowing and paused modes?**
-- **Flowing mode**: emits `data` events automatically.
-- **Paused mode**: requires manual `.read()` or async iterator.
-
----
-
-### 119. **How to convert async iterable into stream?**
-```js
-const { Readable } = require('stream');
-const iterable = Readable.from(['one', 'two', 'three']);
-iterable.pipe(process.stdout);
-```
-- Useful for dynamic data generation (e.g., pagination).
-
----
-
-### 120. **When to use streams in real-world apps?**
-- Large file uploads/downloads
-- Media streaming (video/audio)
-- Real-time log processing
-- ETL pipelines (CSV/JSON to DB)
-- HTTP proxying, socket tunneling
-
----
-
-## Node.js `process` Module Internals – Questions 121–140
-
-This section explores the powerful `process` global object in Node.js, which provides info/control over the current Node process.
-
----
-
-### 121. **What is `process` in Node.js?**
-- A global object that provides information and control over the current Node.js process (stdin, stdout, env, exit codes, etc.).
-
----
-
-### 122. **How to access environment variables using `process`?**
-```js
-console.log(process.env.NODE_ENV); // Access NODE_ENV
+  .pipe(fs.createWriteStream('file.txt.gz'));
 ```
 
 ---
 
-### 123. **How to set an exit code manually?**
-```js
-process.exitCode = 1; // Preferred
-process.exit();       // Optional: exits immediately
+## 49. What is server-sent events (SSE) in Node.js, and how is it implemented?
+**Answer**: SSE enables servers to send events to clients HTTP connections over, useful for real-time updates. Set `Content-Type: text/event-stream`.
+
+**Code Sample**:
+```javascript
+const express = require('http');
+const http = http.createServer((req, res) => {
+  if (req.url === '/events') {
+      res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+      });
+      setInterval(() => res.write(`data: ${new Date().toISOString()}\n/n`), 1000);
+      } else {
+          res.writeHead(404);
+          res.end();
+      }
+  });
+http.listen(3000);
 ```
 
 ---
 
-### 124. **Difference between `process.exitCode` and `process.exit()`?**
-- `exitCode`: graceful shutdown after all callbacks finish.
-- `exit()`: force exit immediately (not recommended during I/O).
+## 50. How do you profile a Node.js application for CPU usage?
+**Answer**: Use `--prof` flag, analyze with `--prof-process`, or tools like `clinic.js`. Monitor CPU with `process.cpuUsage()` for real-time insights.
 
----
-
-### 125. **How to handle `SIGINT` or `SIGTERM` signals?**
-```js
-process.on('SIGINT', () => {
-  console.log('Gracefully shutting down...');
-  process.exit(0);
-});
-```
-
----
-
-### 126. **How to get memory usage details of a process?**
-```js
-console.log(process.memoryUsage());
-```
-- Returns heapUsed, heapTotal, rss (resident set size), external, arrayBuffers.
-
----
-
-### 127. **How to monitor CPU usage of a process?**
-```js
+**Code Sample**:
+```javascript
 console.log(process.cpuUsage());
-// { user: <microseconds>, system: <microseconds> }
+setInterval(() => {
+  const usage = process.cpuUsage();
+  console.log(`User: ${usage.user/ / 1000000} ms`, / 1000 ms, System: ${usage.system}`);
+/ 1000000} ms`);
+}, 1000);
 ```
-
----
-
-### 128. **How to get current working directory and change it?**
-```js
-console.log(process.cwd());     // Get current directory
-process.chdir('/tmp');          // Change directory
-```
-
----
-
-### 129. **How to get process uptime in seconds?**
-```js
-console.log(process.uptime());
-```
-
----
-
-### 130. **What does `process.nextTick()` do?**
-```js
-process.nextTick(() => console.log('Executed after current operation, before promises'));
-```
-- Microtask queue, runs before promise handlers.
-
----
-
-### 131. **When should you NOT use `process.exit()`?**
-- When async operations (e.g., file writes, DB writes) are still pending.
-- Always prefer graceful shutdown.
-
----
-
-### 132. **How to send custom signals between processes?**
-```js
-process.kill(pid, 'SIGUSR1'); // Sends a signal, does not always kill
-```
-
----
-
-### 133. **How to read command line arguments in Node.js?**
-```js
-console.log(process.argv); // Includes node path and script path
-```
-
----
-
-### 134. **What is `process.stdin` and how to use it?**
-```js
-process.stdin.on('data', data => {
-  console.log(`You typed: ${data}`);
-});
-```
-
----
-
-### 135. **How to listen for process `uncaughtException`?**
-```js
-process.on('uncaughtException', err => {
-  console.error('Unhandled exception:', err);
-});
-```
-
----
-
-### 136. **How to listen for `unhandledRejection`?**
-```js
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled rejection:', reason);
-});
-```
-
----
-
-### 137. **How to detect if process is running inside a terminal?**
-```js
-console.log(process.stdout.isTTY); // true/false
-```
-
----
-
-### 138. **How to get high-resolution time from `process.hrtime()`?**
-```js
-const start = process.hrtime();
-// later...
-const diff = process.hrtime(start);
-console.log(`Time elapsed: ${diff[0]}s ${diff[1] / 1e6}ms`);
-```
-
----
-
-### 139. **What does `process.title` do?**
-```js
-process.title = 'my-custom-process';
-```
-- Sets custom title visible in process manager or terminal.
-
----
-
-### 140. **How to detect platform and architecture of the process?**
-```js
-console.log(process.platform);  // e.g., 'linux', 'win32', 'darwin'
-console.log(process.arch);      // e.g., 'x64', 'arm64'
-```
-
----
 
