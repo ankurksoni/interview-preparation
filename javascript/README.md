@@ -998,3 +998,311 @@ controller.abort(); // Removes the event listener
 | Scope          | Prefer `const` > `let` > never `var`                                  |
 | Error Handling | Custom errors + `try/catch` in async code                             |
 | Performance    | Debounce input, throttle scroll, watch for memory leaks               |
+
+---
+
+## 11. Scalability, Resiliency & Distributed Patterns
+
+### Q53. **How do Web Workers help with scalability in JavaScript?**
+
+**Answer:** Web Workers run code on a **separate OS thread**, keeping the main thread responsive. They're ideal for CPU-heavy tasks like parsing, image processing, or crypto.
+
+```js
+// main.js
+const worker = new Worker("worker.js");
+worker.postMessage({ data: largeArray });
+
+worker.onmessage = (e) => {
+  console.log("Processed result:", e.data);
+};
+
+worker.onerror = (e) => {
+  console.error("Worker crashed:", e.message);
+};
+
+// worker.js
+self.onmessage = (e) => {
+  const result = e.data.data.map((x) => x * 2); // heavy computation
+  self.postMessage(result);
+};
+```
+
+| Feature           | Main Thread    | Web Worker |
+| ----------------- | -------------- | ---------- |
+| DOM access        | ✅             | ❌         |
+| `fetch` / network | ✅             | ✅         |
+| `setTimeout`      | ✅             | ✅         |
+| SharedArrayBuffer | ✅             | ✅         |
+| CPU-heavy safe    | ❌ (blocks UI) | ✅         |
+
+---
+
+### Q54. **What is the retry pattern with exponential backoff in JavaScript?**
+
+**Answer:** When calling unreliable APIs or services, retry with increasing delays to avoid overwhelming the server and improve resilience.
+
+```js
+async function fetchWithRetry(url, options = {}, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      if (!response.ok && response.status >= 500) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+      return response;
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+
+      const delay = Math.min(1000 * 2 ** attempt, 10000); // 1s, 2s, 4s... cap at 10s
+      const jitter = delay * (0.5 + Math.random() * 0.5); // add randomness
+      console.warn(
+        `Attempt ${attempt + 1} failed. Retrying in ${Math.round(jitter)}ms...`,
+      );
+      await new Promise((r) => setTimeout(r, jitter));
+    }
+  }
+}
+```
+
+> **Why jitter?** Without jitter, thousands of clients retry at the exact same moment (thundering herd). Jitter spreads retries across time.
+
+---
+
+### Q55. **How do you implement a circuit breaker in JavaScript?**
+
+**Answer:** A circuit breaker prevents cascading failures by stopping calls to a failing service after a threshold, allowing it time to recover.
+
+```js
+class CircuitBreaker {
+  constructor(fn, { threshold = 5, cooldown = 30000 } = {}) {
+    this.fn = fn;
+    this.threshold = threshold;
+    this.cooldown = cooldown;
+    this.failures = 0;
+    this.state = "CLOSED"; // CLOSED → OPEN → HALF_OPEN
+    this.nextAttempt = 0;
+  }
+
+  async call(...args) {
+    if (this.state === "OPEN") {
+      if (Date.now() < this.nextAttempt) {
+        throw new Error("Circuit is OPEN — service unavailable");
+      }
+      this.state = "HALF_OPEN";
+    }
+
+    try {
+      const result = await this.fn(...args);
+      this.#onSuccess();
+      return result;
+    } catch (error) {
+      this.#onFailure();
+      throw error;
+    }
+  }
+
+  #onSuccess() {
+    this.failures = 0;
+    this.state = "CLOSED";
+  }
+
+  #onFailure() {
+    this.failures++;
+    if (this.failures >= this.threshold) {
+      this.state = "OPEN";
+      this.nextAttempt = Date.now() + this.cooldown;
+    }
+  }
+}
+
+// Usage
+const breaker = new CircuitBreaker(fetch, { threshold: 3, cooldown: 15000 });
+try {
+  const res = await breaker.call("https://api.example.com/data");
+} catch (e) {
+  console.error(e.message); // "Circuit is OPEN" after 3 failures
+}
+```
+
+| State     | Behavior                                                |
+| --------- | ------------------------------------------------------- |
+| CLOSED    | Normal operation, calls pass through                    |
+| OPEN      | All calls rejected immediately (fail fast)              |
+| HALF_OPEN | One test call allowed; success → CLOSED, failure → OPEN |
+
+---
+
+### Q56. **How does `AbortController` improve resilience in HTTP calls?**
+
+**Answer:** It lets you set **timeouts** and **cancel** in-flight requests, preventing hung connections from consuming resources.
+
+```js
+async function fetchWithTimeout(url, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    return await response.json();
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(`Request to ${url} timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// Cancel multiple parallel requests when one finishes
+async function raceRequests(urls) {
+  const controller = new AbortController();
+  try {
+    return await Promise.any(
+      urls.map((url) =>
+        fetch(url, { signal: controller.signal }).then((r) => r.json()),
+      ),
+    );
+  } finally {
+    controller.abort(); // cancel remaining requests
+  }
+}
+```
+
+---
+
+### Q57. **What is the Bulkhead pattern and how does it apply in JavaScript?**
+
+**Answer:** The Bulkhead pattern isolates different parts of your application so a failure in one doesn't sink everything — like compartments in a ship.
+
+```js
+class Bulkhead {
+  constructor(maxConcurrent) {
+    this.max = maxConcurrent;
+    this.running = 0;
+    this.queue = [];
+  }
+
+  async execute(fn) {
+    if (this.running >= this.max) {
+      await new Promise((resolve) => this.queue.push(resolve));
+    }
+    this.running++;
+    try {
+      return await fn();
+    } finally {
+      this.running--;
+      if (this.queue.length > 0) {
+        this.queue.shift()(); // release next from queue
+      }
+    }
+  }
+}
+
+// Isolate API calls: max 5 concurrent to payment service
+const paymentPool = new Bulkhead(5);
+// Max 10 concurrent to inventory service
+const inventoryPool = new Bulkhead(10);
+
+// Payment service being slow won't block inventory calls
+await Promise.all([
+  paymentPool.execute(() => fetch("/api/payment")),
+  inventoryPool.execute(() => fetch("/api/inventory")),
+]);
+```
+
+---
+
+### Q58. **How do you handle errors in `Promise.allSettled` vs `Promise.all` for distributed calls?**
+
+**Answer:** When calling multiple independent services, `Promise.allSettled` gives you **partial success** instead of failing everything.
+
+```js
+// ❌ Promise.all — one failure kills ALL results
+try {
+  const [user, orders, recommendations] = await Promise.all([
+    fetchUser(id),
+    fetchOrders(id),
+    fetchRecommendations(id), // if this fails, you lose user + orders too
+  ]);
+} catch (e) {
+  // total failure — even though user and orders succeeded
+}
+
+// ✅ Promise.allSettled — graceful degradation
+const results = await Promise.allSettled([
+  fetchUser(id),
+  fetchOrders(id),
+  fetchRecommendations(id),
+]);
+
+const [user, orders, recommendations] = results.map((r) =>
+  r.status === "fulfilled" ? r.value : null,
+);
+
+// Page works with user + orders even if recommendations failed
+renderPage({ user, orders, recommendations }); // recommendations = null → show fallback
+```
+
+> **Rule of thumb:** Use `Promise.all` for tightly coupled operations (all-or-nothing). Use `Promise.allSettled` for best-effort / graceful degradation.
+
+---
+
+### Q59. **What is the BroadcastChannel API and how does it help with distributed browser tabs?**
+
+**Answer:** `BroadcastChannel` lets multiple tabs/windows of the **same origin** communicate — useful for syncing auth state, caches, or real-time updates.
+
+```js
+// Tab 1: send logout signal
+const channel = new BroadcastChannel("auth");
+channel.postMessage({ type: "LOGOUT" });
+
+// Tab 2: listen and react
+const channel = new BroadcastChannel("auth");
+channel.onmessage = (event) => {
+  if (event.data.type === "LOGOUT") {
+    clearSession();
+    window.location.href = "/login";
+  }
+};
+```
+
+| Use case                  | Solution                     |
+| ------------------------- | ---------------------------- |
+| Sync auth across tabs     | BroadcastChannel             |
+| Shared cache invalidation | BroadcastChannel + IndexedDB |
+| Cross-tab leader election | Locks API + BroadcastChannel |
+
+---
+
+### Q60. **What are performance bottlenecks in JavaScript and how do you diagnose them?**
+
+**Answer:**
+
+| Bottleneck                     | Symptom                 | Diagnosis Tool                       | Fix                                                 |
+| ------------------------------ | ----------------------- | ------------------------------------ | --------------------------------------------------- |
+| Long task blocking main thread | UI janky, input lag     | `PerformanceObserver` for long tasks | Break into chunks with `scheduler.yield()`          |
+| Memory leak                    | Growing heap, GC pauses | Chrome DevTools → Memory tab         | Clean up closures, WeakRef, WeakMap                 |
+| Layout thrashing               | Slow DOM updates        | Performance panel → Layout events    | Batch DOM reads/writes, use `requestAnimationFrame` |
+| Large bundle                   | Slow page load          | Lighthouse, webpack-bundle-analyzer  | Code splitting, tree shaking, dynamic `import()`    |
+| Excessive re-renders (React)   | Slow UI updates         | React DevTools Profiler              | `useMemo`, `React.memo`, virtualization             |
+
+```js
+// Detect long tasks (>50ms) automatically
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    console.warn(`Long task detected: ${entry.duration}ms`, entry);
+  }
+});
+observer.observe({ entryTypes: ["longtask"] });
+
+// Break up heavy work to stay responsive
+async function processLargeArray(items) {
+  const CHUNK = 100;
+  for (let i = 0; i < items.length; i += CHUNK) {
+    const chunk = items.slice(i, i + CHUNK);
+    processChunk(chunk);
+    await scheduler.yield(); // give main thread back to browser
+  }
+}
+```

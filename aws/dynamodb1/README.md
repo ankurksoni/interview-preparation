@@ -217,3 +217,210 @@ await docClient.send(
 ## 📌 Summary
 
 DynamoDB is powerful — but only if you design with its **partitioning, consistency model, and indexing rules** in mind. Understand your access patterns, leverage indexes carefully, and monitor size constraints to build scalable apps.
+
+---
+
+## Resiliency, Availability, Error Handling & Distributed Patterns
+
+### 11. **How does DynamoDB achieve high availability and fault tolerance?**
+
+**Answer:** DynamoDB automatically replicates data across **3 Availability Zones** within a region. There's no single point of failure.
+
+| Layer                | Redundancy                     |   You manage?    |
+| -------------------- | ------------------------------ | :--------------: |
+| Storage              | 3 AZ replication (synchronous) |   ❌ Automatic   |
+| Request routing      | Multiple internal routers      |   ❌ Automatic   |
+| Partition management | Auto-split, auto-migrate       |   ❌ Automatic   |
+| Global Tables        | Active-active across regions   | ✅ You enable it |
+
+```
+Region: us-east-1
+┌─────────┐    ┌─────────┐    ┌─────────┐
+│  AZ-1a  │    │  AZ-1b  │    │  AZ-1c  │
+│ Replica │ ←→ │ Replica │ ←→ │ Replica │
+└─────────┘    └─────────┘    └─────────┘
+     Write acknowledged after 2 of 3 replicas confirm.
+     Read (strong consistency) routes to leader replica.
+     Read (eventual consistency) can use any replica.
+```
+
+> **SLA:** 99.999% for Global Tables, 99.99% for single-region tables.
+
+---
+
+### 12. **How does DynamoDB handle throttling and what errors should you expect?**
+
+**Answer:** DynamoDB returns `ProvisionedThroughputExceededException` when you exceed your table's capacity, or `ThrottlingException` for API-level throttling.
+
+```ts
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+
+const client = new DynamoDBClient({
+  maxAttempts: 5, // SDK retries with exponential backoff built-in
+});
+
+try {
+  await client.send(
+    new PutItemCommand({
+      TableName: "Orders",
+      Item: { orderId: { S: "o-123" }, status: { S: "pending" } },
+    }),
+  );
+} catch (error) {
+  if (error.name === "ProvisionedThroughputExceededException") {
+    // SDK already retried 5 times — this is a sustained capacity issue
+    console.error("Throughput exceeded. Consider:");
+    console.error("1. Switch to on-demand mode");
+    console.error("2. Increase provisioned WCU");
+    console.error("3. Check for hot partitions");
+  }
+  if (error.name === "ConditionalCheckFailedException") {
+    // Expected in optimistic locking patterns — not an actual error
+    console.log("Item was modified by another request");
+  }
+  if (error.name === "TransactionCanceledException") {
+    console.error("Transaction failed. Reasons:", error.CancellationReasons);
+  }
+}
+```
+
+| Error                                    |  Retryable?   | Common Cause                          | Fix                                |
+| ---------------------------------------- | :-----------: | ------------------------------------- | ---------------------------------- |
+| ProvisionedThroughputExceededException   | ✅ (SDK auto) | Burst exceeds capacity                | On-demand mode or increase RCU/WCU |
+| ThrottlingException                      | ✅ (SDK auto) | Too many control plane API calls      | Back off, reduce API calls         |
+| ConditionalCheckFailedException          |      ❌       | Condition expression failed           | Expected — handle in logic         |
+| TransactionCanceledException             |    Depends    | Conflict, condition failure, capacity | Check CancellationReasons array    |
+| ValidationException                      |      ❌       | Invalid request (bad key, wrong type) | Fix request                        |
+| ItemCollectionSizeLimitExceededException |      ❌       | LSI item collection exceeded 10 GB    | Redesign partition key             |
+
+---
+
+### 13. **How does DynamoDB partition data and what is a hot partition?**
+
+**Answer:** DynamoDB hashes the partition key to distribute items across internal partitions. Each partition supports up to **3,000 RCU** and **1,000 WCU**.
+
+```
+Table: UserSessions (partition key = userId)
+
+Good distribution:              Bad distribution (hot partition):
+┌──────────┐                    ┌──────────┐
+│ Part 1   │ userId: A-D  25%  │ Part 1   │ userId: "system"  90% ← HOT!
+│ Part 2   │ userId: E-K  25%  │ Part 2   │ userId: others     5%
+│ Part 3   │ userId: L-R  25%  │ Part 3   │ userId: others     5%
+│ Part 4   │ userId: S-Z  25%  │ Part 4   │ (empty)            0%
+└──────────┘                    └──────────┘
+```
+
+**Strategies to avoid hot partitions:**
+
+| Strategy                       | Example                          | When to use              |
+| ------------------------------ | -------------------------------- | ------------------------ |
+| High-cardinality partition key | `userId`, `deviceId`             | Always                   |
+| Write sharding (suffix)        | `date#0`, `date#1`, `date#2`     | Time-series writes       |
+| Composite key                  | `userId#orderDate`               | Multi-access patterns    |
+| Scatter-gather                 | Write to N shards, read from all | Extreme write throughput |
+
+```ts
+// Write sharding for a high-traffic counter
+const SHARD_COUNT = 10;
+
+async function incrementCounter(counterId: string) {
+  const shard = Math.floor(Math.random() * SHARD_COUNT);
+  await client.send(
+    new UpdateItemCommand({
+      TableName: "Counters",
+      Key: { pk: { S: `${counterId}#${shard}` } },
+      UpdateExpression: "ADD #count :inc",
+      ExpressionAttributeNames: { "#count": "count" },
+      ExpressionAttributeValues: { ":inc": { N: "1" } },
+    }),
+  );
+}
+
+// Read: aggregate across all shards
+async function getCounter(counterId: string) {
+  const queries = Array.from({ length: SHARD_COUNT }, (_, i) =>
+    client.send(
+      new GetItemCommand({
+        TableName: "Counters",
+        Key: { pk: { S: `${counterId}#${i}` } },
+      }),
+    ),
+  );
+  const results = await Promise.all(queries);
+  return results.reduce((sum, r) => sum + parseInt(r.Item?.count?.N || "0"), 0);
+}
+```
+
+---
+
+### 14. **How do Global Tables provide distributed, multi-region availability?**
+
+**Answer:** Global Tables are **active-active**: every region can accept reads AND writes. Replication is automatic and typically under 1 second.
+
+```ts
+// Write in us-east-1
+await clientUSEast.send(
+  new PutItemCommand({
+    TableName: "Users",
+    Item: { userId: { S: "u123" }, name: { S: "Alice" } },
+  }),
+);
+
+// Read in eu-west-1 — available within ~1 second
+const user = await clientEUWest.send(
+  new GetItemCommand({
+    TableName: "Users",
+    Key: { userId: { S: "u123" } },
+  }),
+);
+```
+
+| Feature             | Single-region table     | Global Table                                  |
+| ------------------- | ----------------------- | --------------------------------------------- |
+| Availability SLA    | 99.99%                  | 99.999%                                       |
+| Write location      | One region              | Any region (active-active)                    |
+| Conflict resolution | N/A                     | Last writer wins (timestamp)                  |
+| Read consistency    | Strong or eventual      | Eventual (cross-region), Strong (same region) |
+| Cost                | Base price              | Base + replication WCU                        |
+| Disaster recovery   | Manual (backup/restore) | Automatic (another region is already live)    |
+
+> **Conflict resolution:** If two regions write to the same item within the replication window, **last-writer-wins** (based on timestamp). Design for idempotency to handle this.
+
+---
+
+### 15. **What performance factors matter most in DynamoDB?**
+
+**Answer:**
+
+| Factor               | Impact                               | Optimization                                           |
+| -------------------- | ------------------------------------ | ------------------------------------------------------ |
+| Partition key design | Determines distribution, throughput  | High cardinality, avoid hot keys                       |
+| Item size            | Larger items = more RCU/WCU consumed | Project only needed attributes                         |
+| Read consistency     | Strong reads cost 2× eventual reads  | Use eventual reads when possible                       |
+| Query vs Scan        | Scan reads entire table              | Always Query with partition key                        |
+| GSI projections      | ALL = double storage cost            | Project only attributes you need                       |
+| Transaction overhead | 2× capacity for transactional ops    | Batch normal writes when possible                      |
+| DAX (caching)        | Microsecond reads, reduces RCU       | Enable for read-heavy, eventually consistent workloads |
+
+```ts
+// ❌ Expensive: Scan entire table with filter (reads everything, discards most)
+const expensive = await client.send(
+  new ScanCommand({
+    TableName: "Orders",
+    FilterExpression: "userId = :uid",
+    ExpressionAttributeValues: { ":uid": { S: "u123" } },
+  }),
+);
+
+// ✅ Efficient: Query with partition key (reads only matching items)
+const efficient = await client.send(
+  new QueryCommand({
+    TableName: "Orders",
+    KeyConditionExpression: "userId = :uid",
+    ExpressionAttributeValues: { ":uid": { S: "u123" } },
+    ProjectionExpression: "orderId, #s, total", // only fetch needed fields
+    ExpressionAttributeNames: { "#s": "status" },
+  }),
+);
+```

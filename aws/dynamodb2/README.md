@@ -244,3 +244,108 @@ Below are frequently asked interview questions on DynamoDB pagination and indexi
 **ANSWER:** When querying multiple versions of the same book (same `book_id`), sorted by rating instead of publishedYear.
 
 ...
+
+---
+
+## Scalability, Resiliency & Error Handling in DynamoDB Pagination
+
+**QUESTION:** How do you handle pagination errors in high-throughput scenarios?  
+**ANSWER:** DynamoDB pagination can fail due to throttling, especially during Scans. Build retry logic around paginated reads.
+
+```ts
+async function paginateWithRetry(params, maxRetries = 3) {
+  const allItems = [];
+  let lastKey = undefined;
+  let retries = 0;
+
+  do {
+    try {
+      const command = new QueryCommand({
+        ...params,
+        ExclusiveStartKey: lastKey,
+      });
+      const result = await client.send(command);
+      allItems.push(...(result.Items || []));
+      lastKey = result.LastEvaluatedKey;
+      retries = 0; // reset on success
+    } catch (error) {
+      if (
+        error.name === "ProvisionedThroughputExceededException" &&
+        retries < maxRetries
+      ) {
+        retries++;
+        const delay = Math.min(100 * 2 ** retries, 5000);
+        console.warn(
+          `Throttled during pagination. Retry ${retries}/${maxRetries} in ${delay}ms`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        // Don't update lastKey — retry the same page
+      } else {
+        throw error;
+      }
+    }
+  } while (lastKey);
+
+  return allItems;
+}
+```
+
+**QUESTION:** How does DynamoDB pagination scale differently between Query and Scan?  
+**ANSWER:**
+
+| Aspect                 |          Query (paginated)          |          Scan (paginated)           |
+| ---------------------- | :---------------------------------: | :---------------------------------: |
+| Data read per page     |       Only matching partition       |     Entire table (1 MB chunks)      |
+| Throughput cost        |           Low (targeted)            |       High (reads everything)       |
+| Parallelizable         |    Not useful (already targeted)    |   ✅ Parallel scan with segments    |
+| Filter applied         | After read (reduces returned items) | After read (still reads everything) |
+| Scales with table size |    ❌ Scales with partition size    |   ✅ Scales with total table size   |
+
+```ts
+// Parallel scan for large table exports (distribute across workers)
+async function parallelScan(tableName, totalSegments) {
+  const promises = Array.from({ length: totalSegments }, (_, segment) =>
+    paginateWithRetry({
+      TableName: tableName,
+      Segment: segment,
+      TotalSegments: totalSegments,
+    }),
+  );
+  const results = await Promise.all(promises);
+  return results.flat();
+}
+
+// Use segment count = 2× number of CPU cores or DynamoDB partitions
+const allItems = await parallelScan("Books", 8);
+```
+
+**QUESTION:** What is the impact of consistent reads on pagination performance?  
+**ANSWER:** Strongly consistent reads cost **2× the RCU** of eventually consistent reads and can only be served by the partition leader (one node), creating a bottleneck.
+
+| Read Type             | RCU per 4 KB | Served by   | Pagination Impact      |
+| --------------------- | :----------: | ----------- | ---------------------- |
+| Eventually consistent |   0.5 RCU    | Any replica | Distributed, fast      |
+| Strongly consistent   |   1.0 RCU    | Leader only | Single-node bottleneck |
+
+> **Best practice:** Use eventually consistent reads for pagination unless you absolutely need the latest data. Most listing/search pages are fine with eventual consistency.
+
+**QUESTION:** How do you paginate across DynamoDB Global Tables for disaster recovery?  
+**ANSWER:** Global Tables replicate to all regions. If one region fails, redirect reads to another region. Use the **same `LastEvaluatedKey`** — it works across regions because partition/sort keys are the same.
+
+```ts
+const regions = ["us-east-1", "eu-west-1", "ap-southeast-1"];
+let activeRegion = 0;
+
+async function paginateWithFailover(params) {
+  for (let attempt = 0; attempt < regions.length; attempt++) {
+    try {
+      const client = new DynamoDBClient({ region: regions[activeRegion] });
+      return await paginateWithRetry(params);
+    } catch (error) {
+      console.error(`Region ${regions[activeRegion]} failed:`, error.message);
+      activeRegion = (activeRegion + 1) % regions.length;
+    }
+  }
+  throw new Error("All regions unavailable");
+}
+```

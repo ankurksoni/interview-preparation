@@ -14,9 +14,13 @@ A curated collection of interview preparation material covering popular programm
 
 [Node.js Interview Questions & Answers](./nodejs/README.md) — Event Loop, Streams, Clustering, Security, package.json, and more
 
-## 📂 MongoDB
+## 📂 Databases & Data Technologies
 
-[MongoDB Interview Questions & Answers](./db/mongodb/README.md) — Schema design, Indexing, Aggregation, Sharding, Replication, Vector Search
+- [MongoDB](./db/mongodb/README.md) — Schema design, Indexing, Aggregation, Sharding, Replication, Vector Search
+- [Redis](./db/redis/README.md) — Data Structures, Caching Patterns, Pub/Sub, Streams, Clustering, Distributed Locks
+- [PostgreSQL](./db/postgres/README.md) — Indexing, MVCC, Transactions, JSONB, CTEs, Window Functions, Partitioning
+- [Apache Kafka](./db/kafka/README.md) — Topics, Partitions, Consumer Groups, Exactly-Once, Kafka Connect, Streams
+- [DynamoDB vs Redshift vs Redis vs PostgreSQL vs Kafka — 100-Parameter Comparison](./db/comparison/README.md)
 
 ## 📂 AWS
 
@@ -32,6 +36,7 @@ A curated collection of interview preparation material covering popular programm
 - [Amazon Redshift](./aws/redshift/README.md) — Architecture, Distribution Keys, Spectrum, Data Sharing, Zero-ETL
 - [Amazon SNS](./aws/sns/README.md) — Pub/Sub, Fan-out, Filtering, FIFO Topics, Mobile Push, Delivery
 - [Amazon SQS](./aws/sqs/README.md) — Queues, Visibility Timeout, DLQ, Long Polling, Lambda Integration
+- [CloudFormation & CDK](./aws/cloudformation-cdk/README.md) — IaC, Stacks, Constructs, Pipelines, Testing, Deployment Patterns
 
 ## 📂 OWASP Top 10
 

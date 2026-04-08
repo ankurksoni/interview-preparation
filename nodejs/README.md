@@ -1034,3 +1034,488 @@ setInterval(() => {
   }
 }
 ```
+
+---
+
+## Scalability, Resiliency, Distributed Systems & Performance
+
+## 61. How does the Node.js Cluster module enable horizontal scaling?
+
+**Answer**: The `cluster` module forks multiple worker processes that share the same server port, utilizing all CPU cores.
+
+```js
+import cluster from "node:cluster";
+import { availableParallelism } from "node:os";
+import http from "node:http";
+
+if (cluster.isPrimary) {
+  const numCPUs = availableParallelism();
+  console.log(`Primary ${process.pid} forking ${numCPUs} workers`);
+
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
+
+  cluster.on("exit", (worker, code, signal) => {
+    console.error(
+      `Worker ${worker.process.pid} died (${signal || code}). Restarting...`,
+    );
+    cluster.fork(); // auto-restart crashed workers
+  });
+} else {
+  http
+    .createServer((req, res) => {
+      res.end(`Handled by worker ${process.pid}`);
+    })
+    .listen(3000);
+}
+```
+
+| Scaling approach       | How it works                     | Best for                        |
+| ---------------------- | -------------------------------- | ------------------------------- |
+| `cluster` module       | Multiple processes, same machine | Utilizing all CPU cores         |
+| PM2 cluster mode       | Managed process clustering       | Production single-server        |
+| Docker + load balancer | Multiple containers              | Multi-server horizontal scaling |
+| Kubernetes             | Orchestrated pods + auto-scaling | Large-scale production          |
+
+---
+
+## 62. How do you implement graceful shutdown in Node.js for high availability?
+
+**Answer**: Graceful shutdown ensures in-flight requests complete before the process exits — critical for zero-downtime deployments.
+
+```js
+import http from "node:http";
+
+const server = http.createServer(app);
+let isShuttingDown = false;
+
+server.listen(3000, () => console.log("Server running on :3000"));
+
+async function gracefulShutdown(signal) {
+  console.log(`Received ${signal}. Starting graceful shutdown...`);
+  isShuttingDown = true;
+
+  // 1. Stop accepting new connections
+  server.close(async () => {
+    console.log("HTTP server closed");
+
+    // 2. Close dependent connections
+    await Promise.allSettled([
+      db.end(), // close database pool
+      redis.quit(), // close Redis connection
+      kafka.disconnect(), // disconnect Kafka producer/consumer
+    ]);
+
+    console.log("All connections closed. Exiting.");
+    process.exit(0);
+  });
+
+  // 3. Force kill if graceful shutdown takes too long
+  setTimeout(() => {
+    console.error("Forceful shutdown after timeout");
+    process.exit(1);
+  }, 30_000);
+}
+
+// Health check middleware — return 503 during shutdown
+app.use((req, res, next) => {
+  if (isShuttingDown) {
+    return res.status(503).json({ error: "Server is shutting down" });
+  }
+  next();
+});
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+```
+
+---
+
+## 63. What is the circuit breaker pattern in Node.js and when do you use it?
+
+**Answer**: A circuit breaker prevents cascading failures by short-circuiting calls to a failing downstream service.
+
+```js
+import CircuitBreaker from "opossum";
+
+const options = {
+  timeout: 3000, // if function takes longer than 3s, trigger failure
+  errorThresholdPercentage: 50, // open circuit when 50% of requests fail
+  resetTimeout: 10000, // try again after 10s
+  volumeThreshold: 5, // minimum 5 requests before evaluating
+};
+
+const breaker = new CircuitBreaker(async (userId) => {
+  const res = await fetch(`https://payment-service/users/${userId}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}, options);
+
+// Fallback when circuit is open
+breaker.fallback((userId) => ({ userId, status: "unknown", cached: true }));
+
+// Events for monitoring
+breaker.on("open", () =>
+  console.warn("Circuit OPEN — payment service is down"),
+);
+breaker.on("halfOpen", () => console.info("Circuit HALF_OPEN — testing..."));
+breaker.on("close", () => console.info("Circuit CLOSED — recovered"));
+
+// Usage
+const result = await breaker.fire("user-123");
+```
+
+| State     | Behavior                                 | Duration                  |
+| --------- | ---------------------------------------- | ------------------------- |
+| CLOSED    | Normal — requests pass through           | Until error threshold hit |
+| OPEN      | Fail fast — returns fallback immediately | `resetTimeout` (10s)      |
+| HALF_OPEN | Send one test request                    | Single attempt            |
+
+---
+
+## 64. How do you build health checks and liveness/readiness probes in Node.js?
+
+**Answer**: Health endpoints are essential for load balancers and Kubernetes to route traffic correctly.
+
+```js
+// Readiness: can this instance handle traffic?
+app.get("/health/ready", async (req, res) => {
+  try {
+    await Promise.all([
+      db.query("SELECT 1"), // database is reachable
+      redis.ping(), // cache is reachable
+    ]);
+    res.json({ status: "ready", uptime: process.uptime() });
+  } catch (error) {
+    res.status(503).json({ status: "not ready", error: error.message });
+  }
+});
+
+// Liveness: is the process alive and not stuck?
+app.get("/health/live", (req, res) => {
+  // If event loop is blocked, this handler won't even run
+  res.json({
+    status: "alive",
+    pid: process.pid,
+    memory: process.memoryUsage().heapUsed,
+  });
+});
+
+// Deep health check (for monitoring dashboards)
+app.get("/health/detailed", async (req, res) => {
+  const checks = await Promise.allSettled([
+    checkWithTimeout("postgres", () => db.query("SELECT 1"), 2000),
+    checkWithTimeout("redis", () => redis.ping(), 1000),
+    checkWithTimeout(
+      "external-api",
+      () => fetch("https://api.example.com/ping"),
+      3000,
+    ),
+  ]);
+
+  const results = checks.map((c, i) => ({
+    name: ["postgres", "redis", "external-api"][i],
+    status: c.status === "fulfilled" ? "healthy" : "unhealthy",
+    ...(c.status === "rejected" && { error: c.reason.message }),
+  }));
+
+  const overall = results.every((r) => r.status === "healthy") ? 200 : 503;
+  res.status(overall).json({ dependencies: results });
+});
+```
+
+---
+
+## 65. How does connection pooling improve Node.js scalability?
+
+**Answer**: Without pooling, every request opens/closes a database connection (expensive). A pool maintains reusable connections.
+
+```js
+import pg from "pg";
+
+const pool = new pg.Pool({
+  host: process.env.DB_HOST,
+  database: "myapp",
+  max: 20, // max connections in pool
+  idleTimeoutMillis: 30000, // close idle connections after 30s
+  connectionTimeoutMillis: 5000, // fail if no connection available in 5s
+});
+
+// Monitor pool health
+pool.on("error", (err) => console.error("Idle client error:", err));
+pool.on("connect", () =>
+  console.log(
+    `Pool: ${pool.totalCount} total, ${pool.idleCount} idle, ${pool.waitingCount} waiting`,
+  ),
+);
+
+// Usage — connection auto-returned to pool
+async function getUser(id) {
+  const { rows } = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
+  return rows[0];
+}
+```
+
+| Setting                   | Too Low                | Too High               | Right-size                    |
+| ------------------------- | ---------------------- | ---------------------- | ----------------------------- |
+| `max` connections         | Requests queue up      | DB overloaded, OOM     | CPU cores × 2 + disk spindles |
+| `idleTimeoutMillis`       | Frequent reconnections | Holds idle connections | 10,000–30,000 ms              |
+| `connectionTimeoutMillis` | Slow error detection   | N/A                    | 3,000–5,000 ms                |
+
+---
+
+## 66. How do you handle distributed tracing in Node.js microservices?
+
+**Answer**: Use OpenTelemetry to propagate trace context across service boundaries.
+
+```js
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+
+const sdk = new NodeSDK({
+  traceExporter: new OTLPTraceExporter({ url: "http://jaeger:4318/v1/traces" }),
+  instrumentations: [getNodeAutoInstrumentations()],
+  serviceName: "order-service",
+});
+sdk.start();
+
+// Traces propagate automatically through HTTP headers (W3C traceparent)
+// Service A → Service B → Service C all linked by the same trace ID
+
+// Manual span for custom business logic
+import { trace } from "@opentelemetry/api";
+
+const tracer = trace.getTracer("order-service");
+
+async function processOrder(order) {
+  return tracer.startActiveSpan("processOrder", async (span) => {
+    span.setAttribute("order.id", order.id);
+    span.setAttribute("order.total", order.total);
+    try {
+      await validateInventory(order); // child span auto-created
+      await processPayment(order); // child span auto-created
+      span.setStatus({ code: 1 }); // OK
+      return { success: true };
+    } catch (error) {
+      span.setStatus({ code: 2, message: error.message }); // ERROR
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
+}
+```
+
+---
+
+## 67. How do you prevent event loop blocking and monitor Node.js performance?
+
+**Answer**: A blocked event loop means no requests are processed. Detect and prevent it.
+
+```js
+import { monitorEventLoopDelay } from "node:perf_hooks";
+
+// Monitor event loop lag
+const histogram = monitorEventLoopDelay({ resolution: 20 });
+histogram.enable();
+
+setInterval(() => {
+  console.log({
+    min: histogram.min / 1e6, // ms
+    max: histogram.max / 1e6,
+    mean: histogram.mean / 1e6,
+    p99: histogram.percentile(99) / 1e6,
+  });
+  histogram.reset();
+}, 5000);
+
+// Offload CPU-heavy work to worker threads
+import {
+  Worker,
+  isMainThread,
+  parentPort,
+  workerData,
+} from "node:worker_threads";
+
+function runInWorker(data) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL(import.meta.url), { workerData: data });
+    worker.on("message", resolve);
+    worker.on("error", reject);
+  });
+}
+
+if (!isMainThread) {
+  // Heavy computation runs here — doesn't block event loop
+  const result = heavyComputation(workerData);
+  parentPort.postMessage(result);
+}
+```
+
+| Metric                 | Healthy        | Warning        | Critical                        |
+| ---------------------- | -------------- | -------------- | ------------------------------- |
+| Event loop delay (p99) | < 20ms         | 20–100ms       | > 100ms                         |
+| Heap used              | < 70% of limit | 70–85%         | > 85%                           |
+| Active handles         | Stable         | Growing slowly | Monotonically increasing (leak) |
+| GC pause               | < 50ms         | 50–200ms       | > 200ms                         |
+
+---
+
+## 68. How do you implement rate limiting in a distributed Node.js setup?
+
+**Answer**: Use Redis for centralized rate limiting across multiple instances.
+
+```js
+import Redis from "ioredis";
+
+const redis = new Redis(process.env.REDIS_URL);
+
+// Sliding window rate limiter
+async function isRateLimited(key, maxRequests, windowSec) {
+  const now = Date.now();
+  const windowStart = now - windowSec * 1000;
+
+  const pipeline = redis.pipeline();
+  pipeline.zremrangebyscore(key, 0, windowStart); // remove expired entries
+  pipeline.zadd(key, now, `${now}-${Math.random()}`); // add current request
+  pipeline.zcard(key); // count requests in window
+  pipeline.expire(key, windowSec); // auto-cleanup
+
+  const results = await pipeline.exec();
+  const count = results[2][1];
+
+  return count > maxRequests;
+}
+
+// Express middleware
+function rateLimitMiddleware(maxRequests = 100, windowSec = 60) {
+  return async (req, res, next) => {
+    const key = `ratelimit:${req.ip}`;
+    if (await isRateLimited(key, maxRequests, windowSec)) {
+      return res.status(429).json({ error: "Too many requests" });
+    }
+    next();
+  };
+}
+
+app.use("/api", rateLimitMiddleware(100, 60)); // 100 req/min per IP
+```
+
+---
+
+## 69. What is backpressure in Node.js streams and how do you handle it?
+
+**Answer**: Backpressure occurs when a writable stream can't consume data as fast as the readable produces it. Ignoring it causes **memory exhaustion**.
+
+```js
+import { createReadStream, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { Transform } from "node:stream";
+
+// ❌ BAD — ignores backpressure, can OOM on large files
+const readable = createReadStream("huge-file.csv");
+readable.on("data", (chunk) => {
+  writable.write(processChunk(chunk)); // what if writable is slow?
+});
+
+// ✅ GOOD — pipeline handles backpressure automatically
+const transform = new Transform({
+  transform(chunk, encoding, callback) {
+    const processed = processChunk(chunk);
+    callback(null, processed); // backpressure propagated automatically
+  },
+});
+
+await pipeline(
+  createReadStream("huge-file.csv"),
+  transform,
+  createWriteStream("output.csv"),
+);
+// Memory stays constant regardless of file size
+```
+
+> **Key insight:** Always use `pipeline()` or `.pipe()` instead of manual `data` + `write`. They handle the `drain` event and pausing automatically.
+
+---
+
+## 70. How do you build resilient queue consumers in Node.js?
+
+**Answer**: Queue consumers must handle failures gracefully with retries, dead-letter queues, and idempotency.
+
+```js
+import {
+  SQSClient,
+  ReceiveMessageCommand,
+  DeleteMessageCommand,
+} from "@aws-sdk/client-sqs";
+
+const sqs = new SQSClient({});
+const QUEUE_URL = process.env.QUEUE_URL;
+const DLQ_URL = process.env.DLQ_URL;
+const MAX_RETRIES = 3;
+
+async function processMessage(message) {
+  const body = JSON.parse(message.Body);
+  const retryCount = parseInt(
+    message.Attributes?.ApproximateReceiveCount || "1",
+  );
+
+  if (retryCount > MAX_RETRIES) {
+    console.error(
+      `Message ${message.MessageId} exceeded retries. Sending to DLQ.`,
+    );
+    // SQS DLQ handles this automatically via redrive policy
+    return;
+  }
+
+  try {
+    // Idempotency: check if already processed
+    const processed = await redis.get(`processed:${message.MessageId}`);
+    if (processed) {
+      console.log(`Skipping duplicate: ${message.MessageId}`);
+      return;
+    }
+
+    await handleOrder(body);
+
+    // Mark as processed (with TTL matching message retention)
+    await redis.set(`processed:${message.MessageId}`, "1", "EX", 86400);
+  } catch (error) {
+    console.error(`Failed processing ${message.MessageId}:`, error);
+    throw error; // don't delete — SQS will re-deliver after visibility timeout
+  }
+}
+
+// Long-polling consumer loop
+async function pollMessages() {
+  while (!isShuttingDown) {
+    try {
+      const { Messages = [] } = await sqs.send(
+        new ReceiveMessageCommand({
+          QueueUrl: QUEUE_URL,
+          MaxNumberOfMessages: 10,
+          WaitTimeSeconds: 20, // long polling
+          AttributeNames: ["ApproximateReceiveCount"],
+        }),
+      );
+
+      await Promise.allSettled(
+        Messages.map(async (msg) => {
+          await processMessage(msg);
+          await sqs.send(
+            new DeleteMessageCommand({
+              QueueUrl: QUEUE_URL,
+              ReceiptHandle: msg.ReceiptHandle,
+            }),
+          );
+        }),
+      );
+    } catch (error) {
+      console.error("Poll error:", error);
+      await new Promise((r) => setTimeout(r, 5000)); // back off on poll failure
+    }
+  }
+}
+```

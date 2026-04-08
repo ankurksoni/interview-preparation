@@ -704,3 +704,447 @@ const values: readonly [string, number] = ["age", 30];
 ---
 
 🧠 This completes the extended series of **80 TypeScript interview Q&A**, now covering modern TS (4.9+), config tips, and advanced typing patterns.
+
+---
+
+## Scalability, Resiliency, Error Handling & Performance Patterns in TypeScript
+
+### 81. **How do you build type-safe error handling in TypeScript?**
+
+**Answer:** Use **discriminated unions** instead of thrown exceptions for expected errors. This forces callers to handle every case.
+
+```ts
+// Result type — no exceptions needed
+type Result<T, E = Error> =
+  | { success: true; data: T }
+  | { success: false; error: E };
+
+type ValidationError = { code: "VALIDATION"; field: string; message: string };
+type NotFoundError = { code: "NOT_FOUND"; resource: string };
+type AppError = ValidationError | NotFoundError;
+
+async function getUser(id: string): Promise<Result<User, AppError>> {
+  if (!id.match(/^[a-f0-9-]{36}$/)) {
+    return {
+      success: false,
+      error: { code: "VALIDATION", field: "id", message: "Invalid UUID" },
+    };
+  }
+  const user = await db.findUser(id);
+  if (!user) {
+    return {
+      success: false,
+      error: { code: "NOT_FOUND", resource: `User:${id}` },
+    };
+  }
+  return { success: true, data: user };
+}
+
+// Caller MUST handle both cases — compiler enforces it
+const result = await getUser("abc");
+if (!result.success) {
+  switch (result.error.code) {
+    case "VALIDATION":
+      return res.status(400).json(result.error);
+    case "NOT_FOUND":
+      return res.status(404).json(result.error);
+    // No default needed — TS ensures exhaustive check
+  }
+}
+console.log(result.data.name); // TS knows data exists here
+```
+
+---
+
+### 82. **How do you type retry logic and circuit breakers in TypeScript?**
+
+**Answer:** Use generics to make resilience patterns type-safe and reusable.
+
+```ts
+interface RetryOptions {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: RetryOptions = { maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 10000 },
+): Promise<T> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt === opts.maxRetries) break;
+
+      const delay = Math.min(opts.baseDelayMs * 2 ** attempt, opts.maxDelayMs);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
+}
+
+// Type-safe — return type inferred from fn
+const user = await withRetry(() => fetchUser("123")); // user: User
+const orders = await withRetry(() => fetchOrders("123"), {
+  maxRetries: 5,
+  baseDelayMs: 500,
+  maxDelayMs: 8000,
+});
+```
+
+---
+
+### 83. **How do you type event-driven / distributed message handlers?**
+
+**Answer:** Use a **message map** pattern to ensure producers and consumers agree on message shapes.
+
+```ts
+// Shared contract between services
+interface EventMap {
+  "order.created": { orderId: string; userId: string; total: number };
+  "order.shipped": { orderId: string; trackingId: string; carrier: string };
+  "user.registered": { userId: string; email: string };
+}
+
+type EventName = keyof EventMap;
+
+// Type-safe publisher
+async function publish<E extends EventName>(
+  event: E,
+  payload: EventMap[E],
+): Promise<void> {
+  await messageBus.send({ type: event, data: payload, timestamp: Date.now() });
+}
+
+// Type-safe subscriber
+function subscribe<E extends EventName>(
+  event: E,
+  handler: (data: EventMap[E]) => Promise<void>,
+): void {
+  messageBus.on(event, handler);
+}
+
+// ✅ Compiler enforces correct payload
+publish("order.created", { orderId: "1", userId: "u1", total: 99.99 });
+subscribe("order.shipped", async (data) => {
+  console.log(data.trackingId); // TS knows this exists
+});
+
+// ❌ Compiler catches mismatches
+publish("order.created", { orderId: "1", trackingId: "T1" }); // Error: missing userId, total
+```
+
+---
+
+### 84. **How do you type configuration for scalable applications?**
+
+**Answer:** Use `as const` + mapped types to make config type-safe with environment validation at startup.
+
+```ts
+const envSchema = {
+  PORT: { type: "number", default: 3000 },
+  DATABASE_URL: { type: "string", required: true },
+  REDIS_URL: { type: "string", required: true },
+  MAX_CONNECTIONS: { type: "number", default: 10 },
+  LOG_LEVEL: {
+    type: "enum",
+    values: ["debug", "info", "warn", "error"] as const,
+    default: "info" as const,
+  },
+} as const;
+
+type EnvSchema = typeof envSchema;
+
+// Derive the config type from the schema
+type ConfigType = {
+  [K in keyof EnvSchema]: EnvSchema[K] extends { type: "number" }
+    ? number
+    : EnvSchema[K] extends { type: "enum"; values: readonly (infer V)[] }
+      ? V
+      : string;
+};
+// Result: { PORT: number; DATABASE_URL: string; REDIS_URL: string; MAX_CONNECTIONS: number; LOG_LEVEL: "debug"|"info"|"warn"|"error" }
+
+function loadConfig(): ConfigType {
+  // validate at startup — fail fast if missing required vars
+  for (const [key, schema] of Object.entries(envSchema)) {
+    if ("required" in schema && schema.required && !process.env[key]) {
+      throw new Error(`Missing required env var: ${key}`);
+    }
+  }
+  return {
+    /* ... parsed values ... */
+  } as ConfigType;
+}
+
+const config = loadConfig(); // crashes at startup if DB/Redis URL missing
+```
+
+---
+
+### 85. **How do you type health check endpoints for availability monitoring?**
+
+**Answer:**
+
+```ts
+type HealthStatus = "healthy" | "degraded" | "unhealthy";
+
+interface DependencyHealth {
+  name: string;
+  status: HealthStatus;
+  latencyMs: number;
+  message?: string;
+}
+
+interface HealthCheckResponse {
+  status: HealthStatus;
+  uptime: number;
+  timestamp: string;
+  dependencies: DependencyHealth[];
+}
+
+async function checkDependency(
+  name: string,
+  checkFn: () => Promise<void>,
+): Promise<DependencyHealth> {
+  const start = Date.now();
+  try {
+    await checkFn();
+    return { name, status: "healthy", latencyMs: Date.now() - start };
+  } catch (error) {
+    return {
+      name,
+      status: "unhealthy",
+      latencyMs: Date.now() - start,
+      message: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+async function healthCheck(): Promise<HealthCheckResponse> {
+  const deps = await Promise.all([
+    checkDependency("postgres", () => db.query("SELECT 1")),
+    checkDependency("redis", () => redis.ping()),
+    checkDependency("external-api", () =>
+      fetch("https://api.example.com/health").then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      }),
+    ),
+  ]);
+
+  const overall: HealthStatus = deps.every((d) => d.status === "healthy")
+    ? "healthy"
+    : deps.some((d) => d.status === "unhealthy")
+      ? "unhealthy"
+      : "degraded";
+
+  return {
+    status: overall,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    dependencies: deps,
+  };
+}
+```
+
+---
+
+### 86. **How do you type rate limiters and throttling for performance?**
+
+**Answer:** Use generics to build a type-safe rate limiter that works with any async function.
+
+```ts
+interface RateLimiterOptions {
+  maxRequests: number;
+  windowMs: number;
+}
+
+class RateLimiter {
+  private timestamps: number[] = [];
+
+  constructor(private opts: RateLimiterOptions) {}
+
+  canProceed(): boolean {
+    const now = Date.now();
+    this.timestamps = this.timestamps.filter(
+      (t) => now - t < this.opts.windowMs,
+    );
+    if (this.timestamps.length >= this.opts.maxRequests) return false;
+    this.timestamps.push(now);
+    return true;
+  }
+}
+
+function withRateLimit<TArgs extends unknown[], TReturn>(
+  fn: (...args: TArgs) => Promise<TReturn>,
+  limiter: RateLimiter,
+): (...args: TArgs) => Promise<TReturn> {
+  return async (...args: TArgs) => {
+    if (!limiter.canProceed()) {
+      throw new Error("Rate limit exceeded");
+    }
+    return fn(...args);
+  };
+}
+
+// Usage — fully typed
+const limiter = new RateLimiter({ maxRequests: 100, windowMs: 60_000 });
+const limitedFetchUser = withRateLimit(fetchUser, limiter); // (id: string) => Promise<User>
+```
+
+---
+
+### 87. **What is the `using` keyword (Explicit Resource Management) and how does it help with resource cleanup?**
+
+**Answer:** TC39 Stage 3+ (TypeScript 5.2+). Guarantees resources like DB connections and file handles are cleaned up — critical for scalable apps.
+
+```ts
+class DatabaseConnection implements Disposable {
+  constructor(private pool: Pool) {}
+  private conn?: PoolClient;
+
+  async connect() {
+    this.conn = await this.pool.connect();
+    return this;
+  }
+
+  async query(sql: string, params?: unknown[]) {
+    return this.conn!.query(sql, params);
+  }
+
+  [Symbol.dispose]() {
+    this.conn?.release(); // always returns connection to pool
+    console.log("Connection released back to pool");
+  }
+}
+
+// Connection is ALWAYS released, even if query throws
+async function getUser(id: string) {
+  using conn = await new DatabaseConnection(pool).connect();
+  const result = await conn.query("SELECT * FROM users WHERE id = $1", [id]);
+  return result.rows[0];
+  // conn[Symbol.dispose]() called automatically here
+}
+```
+
+> **Why this matters for scalability:** Connection leaks are the #1 cause of pool exhaustion under load. `using` makes leaks impossible.
+
+---
+
+### 88. **How do you type a distributed lock in TypeScript?**
+
+**Answer:**
+
+```ts
+interface DistributedLock {
+  acquire(key: string, ttlMs: number): Promise<string | null>; // returns lock token or null
+  release(key: string, token: string): Promise<boolean>;
+}
+
+// Higher-order function: type-safe critical section
+async function withLock<T>(
+  lock: DistributedLock,
+  key: string,
+  ttlMs: number,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const token = await lock.acquire(key, ttlMs);
+  if (!token) {
+    throw new Error(`Failed to acquire lock: ${key}`);
+  }
+  try {
+    return await fn();
+  } finally {
+    await lock.release(key, token);
+  }
+}
+
+// Usage
+const result = await withLock(redisLock, `order:${orderId}`, 5000, async () => {
+  const order = await getOrder(orderId);
+  order.status = "processing";
+  await saveOrder(order);
+  return order; // Return type inferred as Order
+});
+```
+
+---
+
+### 89. **How do you model distributed system states with TypeScript?**
+
+**Answer:** Use discriminated unions to model state machines — the compiler prevents invalid state transitions.
+
+```ts
+type OrderState =
+  | { status: "pending"; createdAt: Date }
+  | { status: "confirmed"; confirmedAt: Date; paymentId: string }
+  | { status: "shipped"; shippedAt: Date; trackingNumber: string }
+  | { status: "delivered"; deliveredAt: Date }
+  | { status: "cancelled"; cancelledAt: Date; reason: string };
+
+// Only valid transitions allowed
+function shipOrder(
+  order: Extract<OrderState, { status: "confirmed" }>,
+): Extract<OrderState, { status: "shipped" }> {
+  return {
+    status: "shipped",
+    shippedAt: new Date(),
+    trackingNumber: generateTrackingNumber(),
+  };
+}
+
+// ❌ Compiler error — can't ship a pending order
+const pending: Extract<OrderState, { status: "pending" }> = {
+  status: "pending",
+  createdAt: new Date(),
+};
+// shipOrder(pending); // Error: status 'pending' not assignable to 'confirmed'
+```
+
+---
+
+### 90. **How do you type parallel batch processing for performance?**
+
+**Answer:** Use generics to build a type-safe batch processor with configurable concurrency.
+
+```ts
+async function processBatch<T, R>(
+  items: T[],
+  processor: (item: T) => Promise<R>,
+  concurrency: number = 5,
+): Promise<R[]> {
+  const results: R[] = [];
+  const executing = new Set<Promise<void>>();
+
+  for (const [index, item] of items.entries()) {
+    const task = processor(item).then((result) => {
+      results[index] = result;
+    });
+    const wrapped = task.then(() => executing.delete(wrapped));
+    executing.add(wrapped);
+
+    if (executing.size >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+
+  await Promise.all(executing);
+  return results;
+}
+
+// Fully typed — processes User[] → ProcessedUser[]
+const users = await getUsers();
+const enriched = await processBatch(
+  users,
+  async (user) => ({
+    ...user,
+    orders: await fetchOrders(user.id),
+    score: await calculateScore(user.id),
+  }),
+  10, // max 10 concurrent
+);
+```

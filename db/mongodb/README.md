@@ -788,3 +788,202 @@ db.serverStatus().connections
 ```
 
 Shows current, available, and total created connections.
+
+---
+
+## Error Handling, Resiliency & Advanced Scalability
+
+### 101. **How do you handle write errors and retryable writes in MongoDB?**
+
+**Answer:** MongoDB drivers support **retryable writes** (enabled by default since driver 4.0+). The server automatically retries once on transient network errors or primary elections.
+
+```js
+// Connection string enables retryable writes (default in modern drivers)
+const client = new MongoClient(
+  "mongodb+srv://host/db?retryWrites=true&w=majority",
+);
+
+// Handling different error types
+async function createOrder(order) {
+  try {
+    const result = await db.collection("orders").insertOne(order);
+    return result;
+  } catch (error) {
+    if (error.code === 11000) {
+      // Duplicate key — not retryable, handle idempotency
+      console.log("Order already exists:", error.keyValue);
+      return db.collection("orders").findOne({ orderId: order.orderId });
+    }
+    if (error.hasErrorLabel?.("TransientTransactionError")) {
+      // Safe to retry — primary election, network blip
+      console.warn("Transient error, retrying...");
+      return createOrder(order); // retry once
+    }
+    if (error.hasErrorLabel?.("UnknownTransactionCommitResult")) {
+      // Commit may have succeeded — check before retrying
+      console.warn("Unknown commit result, verifying...");
+      const existing = await db
+        .collection("orders")
+        .findOne({ orderId: order.orderId });
+      if (existing) return existing;
+      return createOrder(order);
+    }
+    throw error; // unrecoverable
+  }
+}
+```
+
+| Error Code      | Meaning                   | Retryable? | Action                    |
+| --------------- | ------------------------- | ---------- | ------------------------- |
+| 11000           | Duplicate key             | ❌         | Return existing or update |
+| 211             | KeyNotFound (transaction) | ✅         | Retry transaction         |
+| 112             | WriteConflict             | ✅         | Retry transaction         |
+| Network timeout | Connection lost           | ✅         | Driver auto-retries       |
+| 13435           | NotPrimaryNoSecondaryOk   | ✅         | Wait for election         |
+
+---
+
+### 102. **How does MongoDB handle error scenarios in transactions?**
+
+**Answer:** Transactions can fail at start, during operations, or at commit. Each requires different handling.
+
+```js
+async function transferFunds(fromId, toId, amount) {
+  const session = client.startSession();
+  try {
+    session.startTransaction({
+      readConcern: { level: "snapshot" },
+      writeConcern: { w: "majority" },
+      readPreference: "primary",
+    });
+
+    const from = await accounts.findOne({ _id: fromId }, { session });
+    if (!from || from.balance < amount) {
+      await session.abortTransaction();
+      throw new Error("Insufficient balance");
+    }
+
+    await accounts.updateOne(
+      { _id: fromId },
+      { $inc: { balance: -amount } },
+      { session },
+    );
+    await accounts.updateOne(
+      { _id: toId },
+      { $inc: { balance: amount } },
+      { session },
+    );
+    await db
+      .collection("transfers")
+      .insertOne(
+        { from: fromId, to: toId, amount, timestamp: new Date() },
+        { session },
+      );
+
+    await session.commitTransaction();
+  } catch (error) {
+    if (error.hasErrorLabel?.("TransientTransactionError")) {
+      console.log("Transient error — retrying entire transaction");
+      return transferFunds(fromId, toId, amount); // safe to retry
+    }
+    if (error.hasErrorLabel?.("UnknownTransactionCommitResult")) {
+      console.log("Commit result unknown — retrying commit only");
+      await session.commitTransaction(); // safe to retry commit
+    }
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+}
+```
+
+---
+
+### 103. **What is the impact of write concern on resiliency?**
+
+**Answer:** Write concern controls how many replica set members must acknowledge a write before it's considered successful.
+
+| Write Concern               | Durability                          | Latency | Use Case               |
+| --------------------------- | ----------------------------------- | ------- | ---------------------- |
+| `w: 0` (unacknowledged)     | None — fire and forget              | Lowest  | Logging, telemetry     |
+| `w: 1` (primary only)       | Primary only                        | Low     | Default — most apps    |
+| `w: "majority"`             | Survives primary failover           | Medium  | Financial transactions |
+| `w: "majority"` + `j: true` | Survives primary crash + power loss | Highest | Critical data          |
+
+```js
+// Per-operation write concern override
+await db
+  .collection("payments")
+  .insertOne(
+    { userId: "u1", amount: 100, status: "completed" },
+    { writeConcern: { w: "majority", j: true, wtimeout: 5000 } },
+  );
+
+// wtimeout: fail after 5s if majority can't acknowledge
+// j: true — wait for journal flush to disk
+```
+
+> **Real-world tip:** Use `w: "majority"` for anything you can't afford to lose. Use `w: 1` for high-throughput, loss-tolerant data like logs.
+
+---
+
+### 104. **How does MongoDB Sharding handle failures and rebalancing?**
+
+**Answer:**
+
+| Failure Scenario       | Impact                         | MongoDB Response                             |
+| ---------------------- | ------------------------------ | -------------------------------------------- |
+| One shard member fails | No data loss (replica set)     | Auto-election of new primary                 |
+| Entire shard down      | Data on that shard unavailable | Queries to other shards still work           |
+| Config server down     | Can't route new connections    | Existing connections continue working        |
+| mongos crashes         | Clients lose connection        | Connect to another mongos (run multiple)     |
+| Network partition      | Split-brain risk               | Majority-based elections prevent split-brain |
+
+```js
+// Targeted query — goes to one shard (fast, resilient to other shard failures)
+db.orders.find({ userId: "u123" }); // if sharded on userId
+
+// Scatter-gather — must touch ALL shards (slower, fails if any shard is down)
+db.orders.find({ status: "pending" }); // status is not the shard key
+
+// Check shard health
+sh.status();
+db.adminCommand({ balancerStatus: 1 });
+```
+
+> **Best practice:** Always shard on a field that matches your most frequent query pattern. Run at least 3 mongos instances behind a load balancer.
+
+---
+
+### 105. **How do you monitor and troubleshoot performance issues in MongoDB?**
+
+**Answer:**
+
+```js
+// 1. Find slow queries
+db.setProfilingLevel(1, { slowms: 100 }); // log queries > 100ms
+db.system.profile.find().sort({ ts: -1 }).limit(5);
+
+// 2. Explain a query — look for COLLSCAN (bad) vs IXSCAN (good)
+db.orders.find({ userId: "u1" }).explain("executionStats");
+// Key fields: nReturned, totalDocsExamined, executionTimeMillis
+
+// 3. Check current operations
+db.currentOp({ secs_running: { $gt: 5 } }); // operations running > 5s
+
+// 4. Index usage stats — find unused indexes
+db.orders.aggregate([{ $indexStats: {} }]);
+
+// 5. Server metrics
+db.serverStatus().opcounters; // read/write/command counts
+db.serverStatus().wiredTiger.cache; // cache hit ratio
+```
+
+| Metric          | Healthy      | Action Needed                                          |
+| --------------- | ------------ | ------------------------------------------------------ |
+| Cache hit ratio | > 95%        | If low: increase RAM or optimize working set           |
+| Replication lag | < 1s         | If high: check oplog size, network, secondary capacity |
+| Connections     | < 80% of max | If high: use connection pooling                        |
+| Page faults     | Low/stable   | If high: working set exceeds RAM                       |
+| Slow queries    | Rare         | Add indexes, restructure queries                       |
