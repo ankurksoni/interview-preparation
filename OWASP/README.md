@@ -1,6 +1,8 @@
-# 🔐 OWASP Top 10 – 2025 with TypeScript Examples
+# OWASP Top 10 — 2021 Edition with TypeScript Examples
 
-The **OWASP Top 10** is a standard awareness document for developers and web application security. Here’s the **2025 edition**, explained with practical **TypeScript** code snippets.
+The **OWASP Top 10** is a standard awareness document for developers and web application security. Below is the **2021 edition** (the latest release), explained with practical **TypeScript** code snippets.
+
+> **Note:** The OWASP Top 10 was last updated in 2021. The categories below reflect the official 2021 list. Check [owasp.org](https://owasp.org/Top10/) for future updates.
 
 ---
 
@@ -12,15 +14,15 @@ The **OWASP Top 10** is a standard awareness document for developers and web app
 
 ```ts
 // ❌ Insecure
-app.get('/orders/:id', async (req, res) => {
+app.get("/orders/:id", async (req, res) => {
   const order = await getOrderById(req.params.id);
   res.json(order); // No user ownership check
 });
 
 // ✅ Secure
-app.get('/orders/:id', async (req, res) => {
+app.get("/orders/:id", async (req, res) => {
   const order = await getOrderById(req.params.id);
-  if (order.userId !== req.user.id) return res.status(403).send('Forbidden');
+  if (order.userId !== req.user.id) return res.status(403).send("Forbidden");
   res.json(order);
 });
 ```
@@ -29,11 +31,11 @@ app.get('/orders/:id', async (req, res) => {
 
 ```ts
 // ❌
-app.post('/admin/deleteUser', deleteUser);
+app.post("/admin/deleteUser", deleteUser);
 
 // ✅
-app.post('/admin/deleteUser', (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).send('Forbidden');
+app.post("/admin/deleteUser", (req, res) => {
+  if (req.user.role !== "admin") return res.status(403).send("Forbidden");
   deleteUser(req, res);
 });
 ```
@@ -59,7 +61,7 @@ await db.insert({ username, password: hashed });
 
 ```ts
 // ❌
-const jwtSecret = 'my-secret';
+const jwtSecret = "my-secret";
 
 // ✅
 const jwtSecret = process.env.JWT_SECRET!;
@@ -78,7 +80,7 @@ const jwtSecret = process.env.JWT_SECRET!;
 db.query(`SELECT * FROM users WHERE email = '${req.body.email}'`);
 
 // ✅
-db.query('SELECT * FROM users WHERE email = $1', [req.body.email]);
+db.query("SELECT * FROM users WHERE email = $1", [req.body.email]);
 ```
 
 ### Example 2 – NoSQL Injection
@@ -101,17 +103,20 @@ User.find({ username: sanitize(req.body.username) });
 
 ```ts
 // ❌
-app.post('/login', loginHandler);
+app.post("/login", loginHandler);
 
 // ✅
-app.post('/login', rateLimiter, loginHandler);
+app.post("/login", rateLimiter, loginHandler);
 ```
 
 ### Example 2 – No Input Validation
 
 ```ts
 // ✅ with Zod
-const schema = z.object({ email: z.string().email(), password: z.string().min(6) });
+const schema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+});
 const result = schema.safeParse(req.body);
 if (!result.success) return res.status(400).json(result.error);
 ```
@@ -130,7 +135,7 @@ app.use((err, req, res) => res.status(500).send(err.stack));
 
 // ✅
 app.use((err, req, res) => {
-  res.status(500).send('Server error');
+  res.status(500).send("Server error");
   logger.error(err.stack);
 });
 ```
@@ -139,7 +144,7 @@ app.use((err, req, res) => {
 
 ```ts
 // ✅
-app.use('/admin', authMiddleware, express.static('admin'));
+app.use("/admin", authMiddleware, express.static("admin"));
 ```
 
 ---
@@ -156,8 +161,8 @@ npm audit fix
 
 ### Example 2 – Use Tools
 
-* Snyk
-* Dependabot
+- Snyk
+- Dependabot
 
 ---
 
@@ -172,15 +177,15 @@ npm audit fix
 jwt.sign(payload, secret);
 
 // ✅
-jwt.sign(payload, secret, { expiresIn: '1h' });
+jwt.sign(payload, secret, { expiresIn: "1h" });
 ```
 
 ### Example 2 – No Logout Invalidation
 
 ```ts
 // ✅
-app.post('/logout', (req, res) => {
-  req.session.destroy(() => res.send('Logged out'));
+app.post("/logout", (req, res) => {
+  req.session.destroy(() => res.send("Logged out"));
 });
 ```
 
@@ -193,8 +198,11 @@ app.post('/logout', (req, res) => {
 ### Example 1 – Subresource Integrity
 
 ```html
-<script src="https://cdn.com/lib.js"
-  integrity="sha384-..." crossorigin="anonymous"></script>
+<script
+  src="https://cdn.com/lib.js"
+  integrity="sha384-..."
+  crossorigin="anonymous"
+></script>
 ```
 
 ### Example 2 – CI/CD Protections
@@ -234,8 +242,8 @@ logger.info(`User ${req.user.id} updated profile`);
 ### Example 1 – Whitelisted URLs
 
 ```ts
-const allowed = ['https://api.example.com'];
-if (!allowed.includes(req.query.url)) return res.status(400).send('Blocked');
+const allowed = ["https://api.example.com"];
+if (!allowed.includes(req.query.url)) return res.status(400).send("Blocked");
 axios.get(req.query.url);
 ```
 
@@ -244,8 +252,8 @@ axios.get(req.query.url);
 ```ts
 const hostname = new URL(req.query.url).hostname;
 const ip = (await dns.lookup(hostname)).address;
-if (ip.startsWith('169.254') || ip.startsWith('127.') || ip.startsWith('10.')) {
-  throw new Error('SSRF blocked');
+if (ip.startsWith("169.254") || ip.startsWith("127.") || ip.startsWith("10.")) {
+  throw new Error("SSRF blocked");
 }
 ```
 
@@ -255,13 +263,13 @@ if (ip.startsWith('169.254') || ip.startsWith('127.') || ip.startsWith('10.')) {
 
 Always:
 
-* Apply **principle of least privilege**
-* Use **automated scanning tools**
-* Perform **secure code reviews**
-* Build with **security by design**
+- Apply **principle of least privilege**
+- Use **automated scanning tools**
+- Perform **secure code reviews**
+- Build with **security by design**
 
 Stay safe and ship secure software! 🚀
 
 ---
 
-*Created by a passionate backend engineer using TypeScript & Node.js to build secure apps.*
+_Created by a passionate backend engineer using TypeScript & Node.js to build secure apps._

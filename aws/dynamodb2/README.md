@@ -1,6 +1,8 @@
-**DynamoDB - Part 2: Pagination and Index-Based Querying (LSI & GSI)**
+# DynamoDB — Part 2: Pagination and Index-Based Querying (LSI & GSI)
 
-In this part, we will explore how pagination works in DynamoDB, and how to handle it effectively when using Local Secondary Indexes (LSI) and Global Secondary Indexes (GSI). We'll use a Books example to illustrate all key points.
+This guide explores how pagination works in DynamoDB, and how to handle it effectively when using Local Secondary Indexes (LSI) and Global Secondary Indexes (GSI). Uses a Books example to illustrate all key points.
+
+> **Note:** Examples use the low-level `DynamoDBClient` for clarity. In production, prefer `DynamoDBDocumentClient` from `@aws-sdk/lib-dynamodb` which handles type marshalling automatically.
 
 ---
 
@@ -41,24 +43,28 @@ DynamoDB returns paginated responses when a query or scan request exceeds 1 MB i
 ### Basic Pagination Query
 
 ```ts
-const res1 = await dynamo.send(new QueryCommand({
-  TableName: 'Books',
-  KeyConditionExpression: 'book_id = :b',
-  ExpressionAttributeValues: {
-    ':b': { S: 'B101' }
-  },
-  Limit: 5
-}));
+const res1 = await dynamo.send(
+  new QueryCommand({
+    TableName: "Books",
+    KeyConditionExpression: "book_id = :b",
+    ExpressionAttributeValues: {
+      ":b": { S: "B101" },
+    },
+    Limit: 5,
+  }),
+);
 
-const res2 = await dynamo.send(new QueryCommand({
-  TableName: 'Books',
-  KeyConditionExpression: 'book_id = :b',
-  ExpressionAttributeValues: {
-    ':b': { S: 'B101' }
-  },
-  Limit: 5,
-  ExclusiveStartKey: res1.LastEvaluatedKey
-}));
+const res2 = await dynamo.send(
+  new QueryCommand({
+    TableName: "Books",
+    KeyConditionExpression: "book_id = :b",
+    ExpressionAttributeValues: {
+      ":b": { S: "B101" },
+    },
+    Limit: 5,
+    ExclusiveStartKey: res1.LastEvaluatedKey,
+  }),
+);
 ```
 
 ---
@@ -70,15 +76,17 @@ LSIs allow an alternate sort key for the same partition key. In our case, we wan
 ### Query Using LSI
 
 ```ts
-const res = await dynamo.send(new QueryCommand({
-  TableName: 'Books',
-  IndexName: 'LSI1',
-  KeyConditionExpression: 'book_id = :b',
-  ExpressionAttributeValues: {
-    ':b': { S: 'B101' }
-  },
-  Limit: 3
-}));
+const res = await dynamo.send(
+  new QueryCommand({
+    TableName: "Books",
+    IndexName: "LSI1",
+    KeyConditionExpression: "book_id = :b",
+    ExpressionAttributeValues: {
+      ":b": { S: "B101" },
+    },
+    Limit: 3,
+  }),
+);
 ```
 
 ### Paginate on LSI
@@ -95,16 +103,18 @@ The LastEvaluatedKey will contain:
 Use it like this:
 
 ```ts
-const nextPage = await dynamo.send(new QueryCommand({
-  TableName: 'Books',
-  IndexName: 'LSI1',
-  KeyConditionExpression: 'book_id = :b',
-  ExpressionAttributeValues: {
-    ':b': { S: 'B101' }
-  },
-  Limit: 3,
-  ExclusiveStartKey: res.LastEvaluatedKey
-}));
+const nextPage = await dynamo.send(
+  new QueryCommand({
+    TableName: "Books",
+    IndexName: "LSI1",
+    KeyConditionExpression: "book_id = :b",
+    ExpressionAttributeValues: {
+      ":b": { S: "B101" },
+    },
+    Limit: 3,
+    ExclusiveStartKey: res.LastEvaluatedKey,
+  }),
+);
 ```
 
 ---
@@ -116,15 +126,17 @@ GSIs support querying on completely different partition/sort keys. We use GSI1 t
 ### Query Using GSI
 
 ```ts
-const res = await dynamo.send(new QueryCommand({
-  TableName: 'Books',
-  IndexName: 'GSI1',
-  KeyConditionExpression: 'genre = :g',
-  ExpressionAttributeValues: {
-    ':g': { S: 'Fantasy' }
-  },
-  Limit: 4
-}));
+const res = await dynamo.send(
+  new QueryCommand({
+    TableName: "Books",
+    IndexName: "GSI1",
+    KeyConditionExpression: "genre = :g",
+    ExpressionAttributeValues: {
+      ":g": { S: "Fantasy" },
+    },
+    Limit: 4,
+  }),
+);
 ```
 
 ### LastEvaluatedKey Example for GSI
@@ -142,16 +154,18 @@ Here, `book_id` is a projected key from the base table.
 ### Next Page Using GSI
 
 ```ts
-const nextPage = await dynamo.send(new QueryCommand({
-  TableName: 'Books',
-  IndexName: 'GSI1',
-  KeyConditionExpression: 'genre = :g',
-  ExpressionAttributeValues: {
-    ':g': { S: 'Fantasy' }
-  },
-  Limit: 4,
-  ExclusiveStartKey: res.LastEvaluatedKey
-}));
+const nextPage = await dynamo.send(
+  new QueryCommand({
+    TableName: "Books",
+    IndexName: "GSI1",
+    KeyConditionExpression: "genre = :g",
+    ExpressionAttributeValues: {
+      ":g": { S: "Fantasy" },
+    },
+    Limit: 4,
+    ExclusiveStartKey: res.LastEvaluatedKey,
+  }),
+);
 ```
 
 ---

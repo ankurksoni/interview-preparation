@@ -1,4 +1,4 @@
-# AWS Lambda Interview Questions and Answers
+# AWS Lambda Interview Questions & Answers
 
 A curated list of **AWS Lambda interview questions**, with clear and concise answers. The first 40 questions cover foundational and intermediate topics. The final 10 questions are **advanced and high-difficulty**, designed for expert-level interviews.
 
@@ -12,7 +12,9 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 ### 2. **What languages does AWS Lambda support?**
 
-**Answer:** AWS Lambda natively supports Node.js, Python, Java, Ruby, Go, .NET Core, and custom runtimes via the AWS Lambda Runtime API (e.g., Rust, PHP).
+**Answer:** AWS Lambda natively supports Node.js (18.x, 20.x, 22.x), Python (3.9–3.13), Java (11, 17, 21), Ruby (3.3, 3.4), .NET (8), and custom runtimes via the AWS Lambda Runtime API (e.g., Rust, Go, PHP). Previously supported runtimes like Node.js 14/16, Python 3.7/3.8, and Go 1.x (managed) have been deprecated.
+
+> **Note:** Go is supported but as a custom runtime (via `provided.al2023`), not as a managed runtime since the deprecation of the `go1.x` runtime in early 2024.
 
 ---
 
@@ -44,8 +46,8 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* **Synchronous**: Caller waits for the result (e.g., API Gateway).
-* **Asynchronous**: Lambda queues the event and processes it later (e.g., S3, SNS).
+- **Synchronous**: Caller waits for the result (e.g., API Gateway).
+- **Asynchronous**: Lambda queues the event and processes it later (e.g., S3, SNS).
 
 ---
 
@@ -53,9 +55,9 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* **Synchronous**: Return proper status codes.
-* **Asynchronous**: Use Dead Letter Queues (DLQs) or EventBridge retry policies.
-* **All**: Wrap code in try-catch and monitor via CloudWatch logs.
+- **Synchronous**: Return proper status codes.
+- **Asynchronous**: Use Dead Letter Queues (DLQs) or EventBridge retry policies.
+- **All**: Wrap code in try-catch and monitor via CloudWatch logs.
 
 ---
 
@@ -111,8 +113,9 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* **Direct upload**: 50 MB (zipped)
-* **Via S3**: 250 MB (unzipped)
+- **Direct upload (zipped)**: 50 MB
+- **Unzipped (via S3)**: 250 MB
+- **Container image**: Up to 10 GB (Lambda supports container images since 2020)
 
 ---
 
@@ -120,10 +123,10 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* Use IAM roles with least privilege
-* Use environment variable encryption (KMS)
-* Enable VPC if needed
-* Apply resource-based policies for triggers
+- Use IAM roles with least privilege
+- Use environment variable encryption (KMS)
+- Enable VPC if needed
+- Apply resource-based policies for triggers
 
 ---
 
@@ -137,9 +140,12 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* Use provisioned concurrency
-* Minimize package size
-* Avoid VPC or optimize VPC settings (e.g., use private subnets with NAT Gateway)
+- Use Provisioned Concurrency
+- Use **Lambda SnapStart** (for Java — pre-initializes and caches execution environments)
+- Minimize package size and dependencies
+- Use `provided.al2023` runtime for faster startup
+- Avoid VPC unless required; if needed, use VPC endpoints
+- Keep initialization code outside the handler
 
 ---
 
@@ -163,7 +169,7 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 ### 24. **What is the difference between Amazon EventBridge and CloudWatch Events for Lambda?**
 
-**Answer:** EventBridge is an evolution of CloudWatch Events with support for SaaS apps and advanced filtering. Both can trigger Lambda functions.
+**Answer:** EventBridge is the successor to CloudWatch Events. It offers the same core functionality plus support for SaaS integrations, custom event buses, schema discovery, and advanced content-based filtering. All new projects should use EventBridge. CloudWatch Events is in maintenance mode.
 
 ---
 
@@ -177,10 +183,10 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* 15-minute execution limit
-* Package size limits
-* Execution environment is ephemeral
-* Limited in high-performance compute or long-running tasks
+- 15-minute execution limit
+- Package size limits
+- Execution environment is ephemeral
+- Limited in high-performance compute or long-running tasks
 
 ---
 
@@ -188,9 +194,9 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* Use Lambda layers
-* Bundle only required dependencies
-* Use tree-shaking tools (Webpack, esbuild, etc.)
+- Use Lambda layers
+- Bundle only required dependencies
+- Use tree-shaking tools (Webpack, esbuild, etc.)
 
 ---
 
@@ -204,10 +210,10 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* Place Lambda in subnets with minimal route tables
-* Use VPC endpoints
-* Reduce security group rules
-* Use provisioned concurrency
+- Place Lambda in subnets with minimal route tables
+- Use VPC endpoints
+- Reduce security group rules
+- Use provisioned concurrency
 
 ---
 
@@ -251,14 +257,15 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* **/tmp (512MB or 10GB)**: Ephemeral storage per invocation
-* **EFS**: Persistent network storage shared across Lambdas
+- **/tmp**: Ephemeral storage per execution environment, configurable from 512 MB to 10 GB
+- **EFS**: Persistent, shared network storage mountable across Lambda invocations
+- **S3**: Object storage for larger or permanent data
 
 ---
 
 ### 37. **Can Lambda access internet when in a VPC?**
 
-**Answer:** Only if it’s in a public subnet or a private subnet with a NAT Gateway attached.
+**Answer:** Lambda functions in a VPC can only access the internet if they are in a **private subnet** with a route to a **NAT Gateway** (or NAT Instance) in a public subnet. Lambda functions cannot be placed directly in a public subnet with an Internet Gateway.
 
 ---
 
@@ -266,10 +273,10 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 **Answer:**
 
-* Keep functions small and focused
-* Handle errors and timeouts gracefully
-* Use environment variables for configuration
-* Monitor with metrics and logs
+- Keep functions small and focused
+- Handle errors and timeouts gracefully
+- Use environment variables for configuration
+- Monitor with metrics and logs
 
 ---
 
@@ -325,7 +332,17 @@ A curated list of **AWS Lambda interview questions**, with clear and concise ans
 
 ### 47. **Compare Lambda with Fargate and EC2 for backend workloads.**
 
-**Answer:** Lambda: best for short-lived, event-driven tasks. Fargate: container-based, mid-range tasks. EC2: long-running, full control workloads. Choose based on control, cost, and runtime.
+**Answer:**
+
+| Feature     | Lambda                 | Fargate              | EC2               |
+| ----------- | ---------------------- | -------------------- | ----------------- |
+| Max runtime | 15 min                 | Unlimited            | Unlimited         |
+| Scaling     | Auto (per-request)     | Auto (task-based)    | Manual/ASG        |
+| Pricing     | Per-request + duration | Per vCPU/memory/hour | Per instance/hour |
+| Startup     | Cold start (ms-sec)    | ~30s–1min            | Minutes           |
+| Control     | Minimal                | Container-level      | Full OS           |
+
+Choose Lambda for short-lived, event-driven tasks. Fargate for containerized workloads. EC2 for full control or GPU access.
 
 ---
 
