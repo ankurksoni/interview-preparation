@@ -20,7 +20,8 @@ A curated collection of interview preparation material covering popular programm
 - [Redis](./db/redis/README.md) — Data Structures, Caching Patterns, Pub/Sub, Streams, Clustering, Distributed Locks
 - [PostgreSQL](./db/postgres/README.md) — Indexing, MVCC, Transactions, JSONB, CTEs, Window Functions, Partitioning
 - [Apache Kafka](./db/kafka/README.md) — Topics, Partitions, Consumer Groups, Exactly-Once, Kafka Connect, Streams
-- [DynamoDB vs Redshift vs Redis vs PostgreSQL vs Kafka — 100-Parameter Comparison](./db/comparison/README.md)
+- [Elasticsearch](./db/elasticsearch/README.md) — Inverted Index, Analyzers, Sharding, Aggregations, ELK Stack, OpenSearch
+- [DynamoDB vs Redshift vs Redis vs PostgreSQL vs Kafka vs Elasticsearch — 100-Parameter Comparison](./db/comparison/README.md)
 
 ## 📂 AWS
 
