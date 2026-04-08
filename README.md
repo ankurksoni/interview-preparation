@@ -30,6 +30,8 @@ A curated collection of interview preparation material covering popular programm
 - [Amazon SES](./aws/ses/README.md) — Email Sending, SPF/DKIM/DMARC, Bounce Handling, Templates
 - [Amazon CloudWatch](./aws/cloudwatch/README.md) — Metrics, Alarms, Logs Insights, EMF, Anomaly Detection
 - [Amazon Redshift](./aws/redshift/README.md) — Architecture, Distribution Keys, Spectrum, Data Sharing, Zero-ETL
+- [Amazon SNS](./aws/sns/README.md) — Pub/Sub, Fan-out, Filtering, FIFO Topics, Mobile Push, Delivery
+- [Amazon SQS](./aws/sqs/README.md) — Queues, Visibility Timeout, DLQ, Long Polling, Lambda Integration
 
 ## 📂 OWASP Top 10
 
