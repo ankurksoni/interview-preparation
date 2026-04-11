@@ -17,7 +17,10 @@ A curated list of **Amazon Athena interview questions** with practical, producti
 - **Engine:** Trino (v3) or PrestoDB (v2)
 
 ```ts
-import { AthenaClient, StartQueryExecutionCommand } from "@aws-sdk/client-athena";
+import {
+  AthenaClient,
+  StartQueryExecutionCommand,
+} from "@aws-sdk/client-athena";
 
 const athena = new AthenaClient({});
 
@@ -38,14 +41,14 @@ await athena.send(
 
 **Answer:**
 
-| Use Athena When | Don't Use Athena When |
-| --- | --- |
-| Ad-hoc querying on S3 data | Sub-second latency queries (use Redshift/DynamoDB) |
+| Use Athena When                               | Don't Use Athena When                                 |
+| --------------------------------------------- | ----------------------------------------------------- |
+| Ad-hoc querying on S3 data                    | Sub-second latency queries (use Redshift/DynamoDB)    |
 | Log analysis (ALB, CloudTrail, VPC flow logs) | Frequent repeated queries on same data (use Redshift) |
-| Data lake exploration | Heavy write workloads (use RDS/DynamoDB) |
-| Cost-sensitive infrequent queries | Real-time streaming analysis (use Kinesis Analytics) |
-| One-off analytics & reporting | OLTP transactional workloads |
-| Quick prototyping before Redshift | Complex multi-join queries at scale (use Redshift) |
+| Data lake exploration                         | Heavy write workloads (use RDS/DynamoDB)              |
+| Cost-sensitive infrequent queries             | Real-time streaming analysis (use Kinesis Analytics)  |
+| One-off analytics & reporting                 | OLTP transactional workloads                          |
+| Quick prototyping before Redshift             | Complex multi-join queries at scale (use Redshift)    |
 
 > **System Design Tip:** If your team queries the same dataset repeatedly throughout the day, Redshift Serverless may be cheaper. Athena shines for infrequent, varied queries across large S3 datasets.
 
@@ -91,11 +94,11 @@ AS SELECT * FROM orders;
 
 **Performance comparison:**
 
-| Format | 1TB Dataset Scan | Cost | Query Time |
-| --- | --- | --- | --- |
-| Raw CSV | 1 TB | $5.00 | ~60s |
-| Parquet (columnar) | ~100 GB | $0.50 | ~10s |
-| Parquet + Partitioned | ~5 GB | $0.025 | ~2s |
+| Format                | 1TB Dataset Scan | Cost   | Query Time |
+| --------------------- | ---------------- | ------ | ---------- |
+| Raw CSV               | 1 TB             | $5.00  | ~60s       |
+| Parquet (columnar)    | ~100 GB          | $0.50  | ~10s       |
+| Parquet + Partitioned | ~5 GB            | $0.025 | ~2s        |
 
 ---
 
@@ -103,14 +106,14 @@ AS SELECT * FROM orders;
 
 **Answer:**
 
-| Parameter | Description | Production Recommendation |
-| --- | --- | --- |
-| `WorkGroup` | Isolates queries, budgets, settings per team | Always use — set per-query data scan limits |
-| `OutputLocation` | S3 path for query results | Use lifecycle rules to auto-delete old results |
-| `EngineVersion` | Trino (v3) or Presto (v2) | Use v3 (Trino) — better performance, more SQL features |
-| `BytesScannedCutoffPerQuery` | Max bytes a query can scan | Set to prevent runaway costs (e.g., 10 GB) |
-| `RequesterPaysEnabled` | Who pays for S3 requests | Enable for cross-account data access |
-| `EnforceWorkGroupConfiguration` | Override client-side settings | Enable to enforce output location and encryption |
+| Parameter                       | Description                                  | Production Recommendation                              |
+| ------------------------------- | -------------------------------------------- | ------------------------------------------------------ |
+| `WorkGroup`                     | Isolates queries, budgets, settings per team | Always use — set per-query data scan limits            |
+| `OutputLocation`                | S3 path for query results                    | Use lifecycle rules to auto-delete old results         |
+| `EngineVersion`                 | Trino (v3) or Presto (v2)                    | Use v3 (Trino) — better performance, more SQL features |
+| `BytesScannedCutoffPerQuery`    | Max bytes a query can scan                   | Set to prevent runaway costs (e.g., 10 GB)             |
+| `RequesterPaysEnabled`          | Who pays for S3 requests                     | Enable for cross-account data access                   |
+| `EnforceWorkGroupConfiguration` | Override client-side settings                | Enable to enforce output location and encryption       |
 
 ```ts
 // CDK: Create a workgroup with cost controls
@@ -180,7 +183,8 @@ async function runQuery(sql: string): Promise<Record<string, string>[]> {
     const columns = result.ResultSet?.ResultSetMetadata?.ColumnInfo ?? [];
     const dataRows = result.ResultSet?.Rows ?? [];
 
-    for (const row of dataRows.slice(nextToken ? 0 : 1)) { // skip header on first page
+    for (const row of dataRows.slice(nextToken ? 0 : 1)) {
+      // skip header on first page
       const record: Record<string, string> = {};
       row.Data?.forEach((cell, i) => {
         record[columns[i].Name!] = cell.VarCharValue ?? "";
@@ -252,14 +256,14 @@ TBLPROPERTIES (
 
 **Answer:**
 
-| Strategy | Savings | Effort |
-| --- | --- | --- |
-| Parquet/ORC instead of CSV | 80–90% | Medium (ETL conversion) |
-| Partition pruning | 90–99% | Low (organize S3 paths) |
-| Columnar projection (SELECT specific cols) | 50–80% | Zero |
-| Workgroup scan limits | Prevents runaway costs | Low |
-| Result reuse (caching) | 100% on cache hit | Low |
-| Compress data (Snappy/ZSTD) | 50–70% | Low |
+| Strategy                                   | Savings                | Effort                  |
+| ------------------------------------------ | ---------------------- | ----------------------- |
+| Parquet/ORC instead of CSV                 | 80–90%                 | Medium (ETL conversion) |
+| Partition pruning                          | 90–99%                 | Low (organize S3 paths) |
+| Columnar projection (SELECT specific cols) | 50–80%                 | Zero                    |
+| Workgroup scan limits                      | Prevents runaway costs | Low                     |
+| Result reuse (caching)                     | 100% on cache hit      | Low                     |
+| Compress data (Snappy/ZSTD)                | 50–70%                 | Low                     |
 
 ```sql
 -- ❌ Bad: Full table scan, all columns
@@ -289,7 +293,14 @@ const dataBucket = new s3.Bucket(this, "DataLake", {
   bucketName: "company-data-lake",
   encryption: s3.BucketEncryption.S3_MANAGED,
   lifecycleRules: [
-    { transition: [{ storageClass: s3.StorageClass.INTELLIGENT_TIERING, transitionAfter: cdk.Duration.days(90) }] },
+    {
+      transition: [
+        {
+          storageClass: s3.StorageClass.INTELLIGENT_TIERING,
+          transitionAfter: cdk.Duration.days(90),
+        },
+      ],
+    },
   ],
 });
 
@@ -322,9 +333,14 @@ new glue.CfnTable(this, "EventsTable", {
     },
     storageDescriptor: {
       location: `s3://${dataBucket.bucketName}/events/`,
-      inputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
-      outputFormat: "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
-      serdeInfo: { serializationLibrary: "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe" },
+      inputFormat:
+        "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+      outputFormat:
+        "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat",
+      serdeInfo: {
+        serializationLibrary:
+          "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe",
+      },
       columns: [
         { name: "event_id", type: "string" },
         { name: "user_id", type: "string" },
@@ -380,14 +396,14 @@ async function resilientQuery(sql: string, maxRetries = 3): Promise<any[]> {
 
 **Key resiliency considerations:**
 
-| Concern | Solution |
-| --- | --- |
-| S3 data corruption | Enable S3 versioning on data bucket |
-| Query failures | Implement retry with exponential backoff |
-| Throttling | Use multiple workgroups to isolate traffic |
-| Catalog outage | Partition projection bypasses Glue catalog |
-| Schema evolution | Use Parquet (supports column additions) |
-| Cross-region DR | Replicate S3 data + Glue catalog export |
+| Concern            | Solution                                   |
+| ------------------ | ------------------------------------------ |
+| S3 data corruption | Enable S3 versioning on data bucket        |
+| Query failures     | Implement retry with exponential backoff   |
+| Throttling         | Use multiple workgroups to isolate traffic |
+| Catalog outage     | Partition projection bypasses Glue catalog |
+| Schema evolution   | Use Parquet (supports column additions)    |
+| Cross-region DR    | Replicate S3 data + Glue catalog export    |
 
 > **Hidden Gem:** Athena queries using **partition projection** continue to work even if Glue Data Catalog is throttled, because partition resolution happens locally in Athena.
 
@@ -442,14 +458,14 @@ export const handler = async () => {
 
 **Answer:**
 
-| Limit | Value | Workaround |
-| --- | --- | --- |
-| Concurrent queries per account | 25 (DML), 20 (DDL) | Use multiple workgroups / accounts |
-| Query timeout | 30 minutes | Break large queries into smaller CTASes |
-| Result size | 2 GB uncompressed | Use CTAS to write results to S3 directly |
-| Partitions per table | Unlimited with projection, 20M in Glue | Always use partition projection |
-| Databases per catalog | 10,000 | Organize with clear naming conventions |
-| Query string size | 256 KB | Use views for complex reusable logic |
+| Limit                          | Value                                  | Workaround                               |
+| ------------------------------ | -------------------------------------- | ---------------------------------------- |
+| Concurrent queries per account | 25 (DML), 20 (DDL)                     | Use multiple workgroups / accounts       |
+| Query timeout                  | 30 minutes                             | Break large queries into smaller CTASes  |
+| Result size                    | 2 GB uncompressed                      | Use CTAS to write results to S3 directly |
+| Partitions per table           | Unlimited with projection, 20M in Glue | Always use partition projection          |
+| Databases per catalog          | 10,000                                 | Organize with clear naming conventions   |
+| Query string size              | 256 KB                                 | Use views for complex reusable logic     |
 
 **Scaling pattern for high-concurrency analytics:**
 
@@ -463,7 +479,8 @@ teams.forEach((team) => {
   new athena.CfnWorkGroup(this, `WG-${team}`, {
     name: team,
     workGroupConfiguration: {
-      bytesScannedCutoffPerQuery: team === "finance" ? 1_073_741_824 : 10_737_418_240,
+      bytesScannedCutoffPerQuery:
+        team === "finance" ? 1_073_741_824 : 10_737_418_240,
       enforceWorkGroupConfiguration: true,
     },
   });
@@ -506,15 +523,15 @@ WHERE created_at >= current_date - interval '1' day;
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **Partition projection** | Calculate partitions at query time | Eliminates MSCK REPAIR, faster queries |
-| **Result reuse** | Cache query results up to 60 min | Free repeated queries |
-| **Prepared statements** | Parameterized queries | Prevent SQL injection, reuse plans |
-| **Federated queries** | Query RDS, DynamoDB, Redis via Lambda connectors | Single SQL across multiple sources |
-| **EXPLAIN** | Show query execution plan | Debug slow queries |
-| **UNLOAD** | Export results in Parquet/ORC/JSON to S3 | Better than CSV for downstream use |
-| **Workgroup tags** | Cost allocation tags on workgroups | Track costs per team/project |
+| Feature                  | What It Does                                     | Why It Matters                         |
+| ------------------------ | ------------------------------------------------ | -------------------------------------- |
+| **Partition projection** | Calculate partitions at query time               | Eliminates MSCK REPAIR, faster queries |
+| **Result reuse**         | Cache query results up to 60 min                 | Free repeated queries                  |
+| **Prepared statements**  | Parameterized queries                            | Prevent SQL injection, reuse plans     |
+| **Federated queries**    | Query RDS, DynamoDB, Redis via Lambda connectors | Single SQL across multiple sources     |
+| **EXPLAIN**              | Show query execution plan                        | Debug slow queries                     |
+| **UNLOAD**               | Export results in Parquet/ORC/JSON to S3         | Better than CSV for downstream use     |
+| **Workgroup tags**       | Cost allocation tags on workgroups               | Track costs per team/project           |
 
 ```sql
 -- Prepared statement: Prevent SQL injection
@@ -562,14 +579,14 @@ new cloudwatch.Alarm(this, "HighScanAlarm", {
 
 **Troubleshooting checklist:**
 
-| Symptom | Likely Cause | Fix |
-| --- | --- | --- |
-| Query very slow | Scanning too much data | Add partitions, use Parquet |
-| `HIVE_PARTITION_SCHEMA_MISMATCH` | Schema drift across partitions | Standardize schema in Glue |
-| `GENERIC_INTERNAL_ERROR` | Corrupt files in S3 | Identify and replace bad files |
-| Query cancelled | Hit `BytesScannedCutoff` | Optimize query or increase limit |
-| Throttled (429) | Too many concurrent queries | Use workgroups, add retry logic |
-| Empty results | Wrong partition values | Check S3 paths match partition columns |
+| Symptom                          | Likely Cause                   | Fix                                    |
+| -------------------------------- | ------------------------------ | -------------------------------------- |
+| Query very slow                  | Scanning too much data         | Add partitions, use Parquet            |
+| `HIVE_PARTITION_SCHEMA_MISMATCH` | Schema drift across partitions | Standardize schema in Glue             |
+| `GENERIC_INTERNAL_ERROR`         | Corrupt files in S3            | Identify and replace bad files         |
+| Query cancelled                  | Hit `BytesScannedCutoff`       | Optimize query or increase limit       |
+| Throttled (429)                  | Too many concurrent queries    | Use workgroups, add retry logic        |
+| Empty results                    | Wrong partition values         | Check S3 paths match partition columns |
 
 ---
 
@@ -577,15 +594,15 @@ new cloudwatch.Alarm(this, "HighScanAlarm", {
 
 **Answer:**
 
-| Criteria | Athena | Redshift | Redshift Spectrum |
-| --- | --- | --- | --- |
-| **Setup** | Zero — serverless | Provision cluster | Needs Redshift cluster |
-| **Pricing** | $5/TB scanned | Per-node hourly | $5/TB scanned + cluster cost |
-| **Latency** | Seconds to minutes | Sub-second (warm) | Seconds |
-| **Concurrency** | 25 queries/account | 50+ with scaling | Shares Redshift concurrency |
-| **Data location** | S3 only | Local SSD + S3 | S3 (cold) + local (hot) |
-| **Best for** | Ad-hoc, exploration | Repeated dashboards, BI | Hot/cold data separation |
-| **Scaling** | Automatic | Manual (resize) or serverless | Automatic for S3 scans |
+| Criteria          | Athena              | Redshift                      | Redshift Spectrum            |
+| ----------------- | ------------------- | ----------------------------- | ---------------------------- |
+| **Setup**         | Zero — serverless   | Provision cluster             | Needs Redshift cluster       |
+| **Pricing**       | $5/TB scanned       | Per-node hourly               | $5/TB scanned + cluster cost |
+| **Latency**       | Seconds to minutes  | Sub-second (warm)             | Seconds                      |
+| **Concurrency**   | 25 queries/account  | 50+ with scaling              | Shares Redshift concurrency  |
+| **Data location** | S3 only             | Local SSD + S3                | S3 (cold) + local (hot)      |
+| **Best for**      | Ad-hoc, exploration | Repeated dashboards, BI       | Hot/cold data separation     |
+| **Scaling**       | Automatic           | Manual (resize) or serverless | Automatic for S3 scans       |
 
 **Decision framework:**
 

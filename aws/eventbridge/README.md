@@ -594,26 +594,26 @@ export const handler = async (event: any) => {
 
 **Answer:**
 
-| Component | Cost (us-east-1) |
-| --- | --- |
-| Custom events published | $1.00 per million events |
-| Default bus (AWS service events) | Free |
-| Third-party events (SaaS) | $1.00 per million |
-| Archive & replay | $0.023 per GB stored |
-| Schema discovery | Free |
-| Pipes (filtering, enrichment) | $0.40 per million invocations |
-| Scheduler | Free (first 14M), $1.00/M after |
-| Cross-region event bus | $1.00/M + data transfer |
+| Component                        | Cost (us-east-1)                |
+| -------------------------------- | ------------------------------- |
+| Custom events published          | $1.00 per million events        |
+| Default bus (AWS service events) | Free                            |
+| Third-party events (SaaS)        | $1.00 per million               |
+| Archive & replay                 | $0.023 per GB stored            |
+| Schema discovery                 | Free                            |
+| Pipes (filtering, enrichment)    | $0.40 per million invocations   |
+| Scheduler                        | Free (first 14M), $1.00/M after |
+| Cross-region event bus           | $1.00/M + data transfer         |
 
 **Cost optimization tips:**
 
-| Strategy | Savings |
-| --- | --- |
-| Use filter patterns on rules | Reduce target invocations (free filtering) |
-| Batch events into fewer PutEvents calls | Up to 10 entries/call |
-| Use Scheduler instead of CloudWatch Events for cron | Free tier is generous |
-| Avoid archiving all events | Archive only what you'd replay |
-| Use default bus for AWS events | Free vs custom bus |
+| Strategy                                            | Savings                                    |
+| --------------------------------------------------- | ------------------------------------------ |
+| Use filter patterns on rules                        | Reduce target invocations (free filtering) |
+| Batch events into fewer PutEvents calls             | Up to 10 entries/call                      |
+| Use Scheduler instead of CloudWatch Events for cron | Free tier is generous                      |
+| Avoid archiving all events                          | Archive only what you'd replay             |
+| Use default bus for AWS events                      | Free vs custom bus                         |
 
 > **Production Tip:** EventBridge filtering is free — filter at the rule level instead of invoking Lambda to filter. Every Lambda invocation you avoid saves money.
 
@@ -650,12 +650,12 @@ new pipes.CfnPipe(this, "OrderPipe", {
 });
 ```
 
-| Use Pipes When | Use Rules + Targets When |
-| --- | --- |
+| Use Pipes When                        | Use Rules + Targets When                      |
+| ------------------------------------- | --------------------------------------------- |
 | Source is SQS/Kinesis/DynamoDB Stream | Source is custom events or AWS service events |
-| Need point-to-point processing | Need fan-out to multiple targets |
-| Want to eliminate glue Lambda | Complex routing logic needed |
-| Enrichment step is simple | Multiple rules with different patterns |
+| Need point-to-point processing        | Need fan-out to multiple targets              |
+| Want to eliminate glue Lambda         | Complex routing logic needed                  |
+| Enrichment step is simple             | Multiple rules with different patterns        |
 
 ---
 
@@ -663,13 +663,13 @@ new pipes.CfnPipe(this, "OrderPipe", {
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **Content-based filtering** | Match on nested JSON fields, arrays, prefixes | Reduce target invocations by 90%+ |
-| **Input transformers** | Reshape event before delivery | Send only needed fields to target |
-| **Archive & replay** | Store events and replay to bus | Disaster recovery, reprocessing |
-| **Global endpoints** | Active-active multi-region | Automatic failover in <1min |
-| **Schema registry** | Auto-discover event schemas | Code generation for type safety |
-| **DLQ per rule** | Failed deliveries go to SQS | Don't lose events on target failure |
+| Feature                     | What It Does                                  | Why It Matters                      |
+| --------------------------- | --------------------------------------------- | ----------------------------------- |
+| **Content-based filtering** | Match on nested JSON fields, arrays, prefixes | Reduce target invocations by 90%+   |
+| **Input transformers**      | Reshape event before delivery                 | Send only needed fields to target   |
+| **Archive & replay**        | Store events and replay to bus                | Disaster recovery, reprocessing     |
+| **Global endpoints**        | Active-active multi-region                    | Automatic failover in <1min         |
+| **Schema registry**         | Auto-discover event schemas                   | Code generation for type safety     |
+| **DLQ per rule**            | Failed deliveries go to SQS                   | Don't lose events on target failure |
 
 > **Hidden Gem:** **Global endpoints** with health checks enable automatic failover between regions. Events are replicated and your producers don't need to change endpoints — EventBridge handles routing.

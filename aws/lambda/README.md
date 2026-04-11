@@ -388,18 +388,18 @@ const fn = new lambda.Function(this, "OrderProcessor", {
   code: lambda.Code.fromAsset("lambda/order-processor"),
   memorySize: 512,
   timeout: cdk.Duration.seconds(30),
-  architecture: lambda.Architecture.ARM_64,    // 20% cheaper than x86
+  architecture: lambda.Architecture.ARM_64, // 20% cheaper than x86
   environment: {
     TABLE_NAME: table.tableName,
     POWERTOOLS_SERVICE_NAME: "order-service",
     LOG_LEVEL: "INFO",
   },
-  tracing: lambda.Tracing.ACTIVE,              // X-Ray
+  tracing: lambda.Tracing.ACTIVE, // X-Ray
   insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_229_0,
   logRetention: logs.RetentionDays.ONE_MONTH,
-  deadLetterQueue: dlq,                        // DLQ for async invocations
+  deadLetterQueue: dlq, // DLQ for async invocations
   retryAttempts: 2,
-  reservedConcurrentExecutions: 100,           // Protect downstream services
+  reservedConcurrentExecutions: 100, // Protect downstream services
 });
 
 // Provisioned concurrency via alias (for latency-critical paths)
@@ -456,15 +456,15 @@ await lambda.send(
 
 **Answer:**
 
-| Strategy | Savings | Effort |
-| --- | --- | --- |
-| ARM64 (Graviton) architecture | 20% cheaper, 34% better perf | Low (set `architecture`) |
-| Right-size memory (use Power Tuning) | 10–50% | Medium |
-| Minimize cold starts (small bundles, lazy init) | Reduces billed init time | Medium |
-| Use provisioned concurrency only where needed | Avoid paying for idle concurrency | Low |
-| Batch processing (SQS, Kinesis) | Fewer invocations | Low |
-| Avoid VPC unless required | Eliminates ENI cold start overhead | Low |
-| Use Lambda Layers for shared deps | Smaller deployment, faster deploys | Medium |
+| Strategy                                        | Savings                            | Effort                   |
+| ----------------------------------------------- | ---------------------------------- | ------------------------ |
+| ARM64 (Graviton) architecture                   | 20% cheaper, 34% better perf       | Low (set `architecture`) |
+| Right-size memory (use Power Tuning)            | 10–50%                             | Medium                   |
+| Minimize cold starts (small bundles, lazy init) | Reduces billed init time           | Medium                   |
+| Use provisioned concurrency only where needed   | Avoid paying for idle concurrency  | Low                      |
+| Batch processing (SQS, Kinesis)                 | Fewer invocations                  | Low                      |
+| Avoid VPC unless required                       | Eliminates ENI cold start overhead | Low                      |
+| Use Lambda Layers for shared deps               | Smaller deployment, faster deploys | Medium                   |
 
 ```ts
 // ❌ Bad: 1024 MB for a simple API handler
@@ -480,12 +480,12 @@ new lambda.Function(this, "Optimized", {
 
 **Cost estimate (us-east-1):**
 
-| Memory | Duration | Invocations/month | Monthly Cost |
-| --- | --- | --- | --- |
-| 128 MB | 100ms | 1M | ~$0.21 |
-| 256 MB | 100ms | 1M | ~$0.42 |
-| 512 MB | 200ms | 10M | ~$16.70 |
-| 1024 MB | 500ms | 10M | ~$83.40 |
+| Memory  | Duration | Invocations/month | Monthly Cost |
+| ------- | -------- | ----------------- | ------------ |
+| 128 MB  | 100ms    | 1M                | ~$0.21       |
+| 256 MB  | 100ms    | 1M                | ~$0.42       |
+| 512 MB  | 200ms    | 10M               | ~$16.70      |
+| 1024 MB | 500ms    | 10M               | ~$83.40      |
 
 ---
 
@@ -493,16 +493,16 @@ new lambda.Function(this, "Optimized", {
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **Response streaming** | Stream response progressively | Long responses without timeout |
-| **SnapStart** | Snapshot init phase (Java) | Near-zero cold starts for Java |
-| **Function URLs** | Built-in HTTPS endpoint | Skip API Gateway for simple use cases |
-| **Recursive loop detection** | Auto-detects Lambda→SQS→Lambda loops | Prevents infinite invocation costs |
-| **`/tmp` storage** | 512 MB–10 GB ephemeral storage | Cache files between invocations (same container) |
-| **Provisioned concurrency auto-scaling** | Scale warm instances by schedule/utilization | Match traffic patterns without over-provisioning |
-| **Lambda Insights** | Enhanced monitoring (memory, CPU, network) | Find memory leaks, optimize sizing |
-| **Event filtering** | Filter at event source level | Reduce invocations for SQS/Kinesis/DynamoDB triggers |
+| Feature                                  | What It Does                                 | Why It Matters                                       |
+| ---------------------------------------- | -------------------------------------------- | ---------------------------------------------------- |
+| **Response streaming**                   | Stream response progressively                | Long responses without timeout                       |
+| **SnapStart**                            | Snapshot init phase (Java)                   | Near-zero cold starts for Java                       |
+| **Function URLs**                        | Built-in HTTPS endpoint                      | Skip API Gateway for simple use cases                |
+| **Recursive loop detection**             | Auto-detects Lambda→SQS→Lambda loops         | Prevents infinite invocation costs                   |
+| **`/tmp` storage**                       | 512 MB–10 GB ephemeral storage               | Cache files between invocations (same container)     |
+| **Provisioned concurrency auto-scaling** | Scale warm instances by schedule/utilization | Match traffic patterns without over-provisioning     |
+| **Lambda Insights**                      | Enhanced monitoring (memory, CPU, network)   | Find memory leaks, optimize sizing                   |
+| **Event filtering**                      | Filter at event source level                 | Reduce invocations for SQS/Kinesis/DynamoDB triggers |
 
 ```ts
 // Event source filtering: Only invoke Lambda for specific events
@@ -538,16 +538,16 @@ const fnUrl = fn.addFunctionUrl({
 
 **Answer:**
 
-| Concern | Solution |
-| --- | --- |
-| Cold start latency | Provisioned concurrency + ARM64 + small bundles |
-| Downstream overload | Reserved concurrency to cap parallel invocations |
-| Transient failures | Built-in retries (async: 2, stream: configurable) |
-| Poison messages | DLQ (async) or `bisectBatchOnError` (streams) |
-| Timeout | Set timeout < downstream timeout; use heartbeats |
-| Region failure | Multi-region with Route 53 health checks |
-| Throttling | Reserved concurrency + SQS buffer |
-| Memory leaks | Monitor with Lambda Insights; container reuse is time-boxed |
+| Concern             | Solution                                                    |
+| ------------------- | ----------------------------------------------------------- |
+| Cold start latency  | Provisioned concurrency + ARM64 + small bundles             |
+| Downstream overload | Reserved concurrency to cap parallel invocations            |
+| Transient failures  | Built-in retries (async: 2, stream: configurable)           |
+| Poison messages     | DLQ (async) or `bisectBatchOnError` (streams)               |
+| Timeout             | Set timeout < downstream timeout; use heartbeats            |
+| Region failure      | Multi-region with Route 53 health checks                    |
+| Throttling          | Reserved concurrency + SQS buffer                           |
+| Memory leaks        | Monitor with Lambda Insights; container reuse is time-boxed |
 
 ```ts
 // CDK: Lambda with SQS buffer for resiliency

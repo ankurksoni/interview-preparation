@@ -695,10 +695,7 @@ const lambdaRole = new iam.Role(this, "OrderProcessorRole", {
 lambdaRole.addToPolicy(
   new iam.PolicyStatement({
     actions: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"],
-    resources: [
-      table.tableArn,
-      `${table.tableArn}/index/*`,
-    ],
+    resources: [table.tableArn, `${table.tableArn}/index/*`],
   }),
 );
 
@@ -741,16 +738,16 @@ iam.PermissionsBoundary.of(this).apply(boundary);
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **IAM Access Analyzer** | Finds resources shared externally | Catch overly permissive policies |
-| **Service Control Policies (SCPs)** | Org-level guardrails | Prevent regions, services across accounts |
-| **Session tags** | Tags passed through STS AssumeRole | ABAC: attribute-based access control |
-| **Permission boundaries** | Max permissions a role can have | Delegate role creation safely |
-| **Condition keys** | Contextual policy restrictions | `aws:SourceIp`, `aws:RequestedRegion`, `aws:PrincipalTag` |
-| **Not-Action / Not-Resource** | Inverse matching in policies | Allow everything EXCEPT specific actions |
-| **Policy simulator** | Test policies before deployment | Validate access without real calls |
-| **Last accessed info** | When a permission was last used | Prune unused permissions |
+| Feature                             | What It Does                       | Why It Matters                                            |
+| ----------------------------------- | ---------------------------------- | --------------------------------------------------------- |
+| **IAM Access Analyzer**             | Finds resources shared externally  | Catch overly permissive policies                          |
+| **Service Control Policies (SCPs)** | Org-level guardrails               | Prevent regions, services across accounts                 |
+| **Session tags**                    | Tags passed through STS AssumeRole | ABAC: attribute-based access control                      |
+| **Permission boundaries**           | Max permissions a role can have    | Delegate role creation safely                             |
+| **Condition keys**                  | Contextual policy restrictions     | `aws:SourceIp`, `aws:RequestedRegion`, `aws:PrincipalTag` |
+| **Not-Action / Not-Resource**       | Inverse matching in policies       | Allow everything EXCEPT specific actions                  |
+| **Policy simulator**                | Test policies before deployment    | Validate access without real calls                        |
+| **Last accessed info**              | When a permission was last used    | Prune unused permissions                                  |
 
 ```ts
 // ABAC: Attribute-based access control with tags
@@ -772,12 +769,12 @@ const abacPolicy = new iam.PolicyStatement({
 
 **Answer:** IAM itself is **free**, but poor IAM practices cost money indirectly:
 
-| Bad Practice | Cost Impact | Fix |
-| --- | --- | --- |
-| Overly broad `*` permissions | Security breach = massive cost | Least privilege, Access Analyzer |
-| No SCP guardrails | Accidental resource creation | SCPs to restrict regions/services |
-| Shared credentials | Impossible to audit who did what | Individual roles, CloudTrail |
-| Long-lived access keys | Key leak = crypto mining bills | Use roles + STS temporary credentials |
-| No MFA on root | Full account takeover risk | Enable MFA, lock root in safe |
+| Bad Practice                 | Cost Impact                      | Fix                                   |
+| ---------------------------- | -------------------------------- | ------------------------------------- |
+| Overly broad `*` permissions | Security breach = massive cost   | Least privilege, Access Analyzer      |
+| No SCP guardrails            | Accidental resource creation     | SCPs to restrict regions/services     |
+| Shared credentials           | Impossible to audit who did what | Individual roles, CloudTrail          |
+| Long-lived access keys       | Key leak = crypto mining bills   | Use roles + STS temporary credentials |
+| No MFA on root               | Full account takeover risk       | Enable MFA, lock root in safe         |
 
 > **Production Tip:** Use `aws iam generate-service-last-accessed-details` to find which permissions a role actually uses. Remove unused permissions to tighten security.

@@ -496,27 +496,27 @@ await publishOrderEvent(order, "order.paid");
 
 **Answer:**
 
-| Component | Cost (us-east-1) |
-| --- | --- |
-| Publish requests | $0.50 per million (first 1M free) |
-| HTTP/S deliveries | $0.60 per million |
-| SQS deliveries | Free |
-| Lambda deliveries | Free (Lambda invocation cost applies) |
-| Email deliveries | $2.00 per 100,000 |
-| SMS deliveries | $0.00645 per msg (US) — varies by country |
-| Mobile push (APNs/FCM) | $0.50 per million |
-| Data transfer | Standard AWS data transfer rates |
-| FIFO topics | $0.50 per million publishes |
+| Component              | Cost (us-east-1)                          |
+| ---------------------- | ----------------------------------------- |
+| Publish requests       | $0.50 per million (first 1M free)         |
+| HTTP/S deliveries      | $0.60 per million                         |
+| SQS deliveries         | Free                                      |
+| Lambda deliveries      | Free (Lambda invocation cost applies)     |
+| Email deliveries       | $2.00 per 100,000                         |
+| SMS deliveries         | $0.00645 per msg (US) — varies by country |
+| Mobile push (APNs/FCM) | $0.50 per million                         |
+| Data transfer          | Standard AWS data transfer rates          |
+| FIFO topics            | $0.50 per million publishes               |
 
 **Cost optimization tips:**
 
-| Strategy | Savings |
-| --- | --- |
-| Use filter policies | Avoid unnecessary Lambda/HTTP invocations |
-| Batch publish (up to 10 messages) | Reduce API calls |
-| Use SQS subscriptions (free delivery) | Cheapest target type |
-| Large payload via S3 reference | Stay under 256KB limit, avoid oversized charges |
-| Use SNS FIFO only when ordering needed | Standard is simpler and cheaper |
+| Strategy                               | Savings                                         |
+| -------------------------------------- | ----------------------------------------------- |
+| Use filter policies                    | Avoid unnecessary Lambda/HTTP invocations       |
+| Batch publish (up to 10 messages)      | Reduce API calls                                |
+| Use SQS subscriptions (free delivery)  | Cheapest target type                            |
+| Large payload via S3 reference         | Stay under 256KB limit, avoid oversized charges |
+| Use SNS FIFO only when ordering needed | Standard is simpler and cheaper                 |
 
 > **Production Tip:** SNS filtering is processed broker-side for free. Moving filter logic from Lambda to SNS subscription filter policies saves both Lambda invocation cost and latency.
 
@@ -526,16 +526,16 @@ await publishOrderEvent(order, "order.paid");
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **Message filtering (advanced)** | Filter on nested attributes, prefix, numeric range | Precise subscriber targeting |
-| **FIFO topics** | Ordering + deduplication (with SQS FIFO) | Financial, transactional use cases |
-| **Delivery status logging** | Log success/failure per endpoint | Debug delivery issues |
-| **Raw message delivery** | Skip SNS envelope wrapper for SQS/HTTP | Cleaner payloads, smaller messages |
-| **Cross-region subscriptions** | Subscriber in different region | Multi-region architectures |
-| **Message archiving** | SNS → Kinesis Firehose → S3 | Audit trail without custom code |
-| **Redrive policy** | DLQ for failed HTTP/Lambda deliveries | Don't lose messages on transient failures |
-| **Subscription filter policy scope** | Filter on `MessageBody` (not just attributes) | Filter on payload content directly |
+| Feature                              | What It Does                                       | Why It Matters                            |
+| ------------------------------------ | -------------------------------------------------- | ----------------------------------------- |
+| **Message filtering (advanced)**     | Filter on nested attributes, prefix, numeric range | Precise subscriber targeting              |
+| **FIFO topics**                      | Ordering + deduplication (with SQS FIFO)           | Financial, transactional use cases        |
+| **Delivery status logging**          | Log success/failure per endpoint                   | Debug delivery issues                     |
+| **Raw message delivery**             | Skip SNS envelope wrapper for SQS/HTTP             | Cleaner payloads, smaller messages        |
+| **Cross-region subscriptions**       | Subscriber in different region                     | Multi-region architectures                |
+| **Message archiving**                | SNS → Kinesis Firehose → S3                        | Audit trail without custom code           |
+| **Redrive policy**                   | DLQ for failed HTTP/Lambda deliveries              | Don't lose messages on transient failures |
+| **Subscription filter policy scope** | Filter on `MessageBody` (not just attributes)      | Filter on payload content directly        |
 
 ```ts
 // Message filtering on body (not just attributes)
@@ -548,7 +548,9 @@ new sns.Subscription(this, "HighValueOrders", {
       sns.SubscriptionFilter.numericFilter({ greaterThan: 1000 }),
     ),
     region: sns.FilterOrPolicy.filter(
-      sns.SubscriptionFilter.stringFilter({ allowlist: ["us-east-1", "eu-west-1"] }),
+      sns.SubscriptionFilter.stringFilter({
+        allowlist: ["us-east-1", "eu-west-1"],
+      }),
     ),
   },
 });
@@ -560,13 +562,13 @@ new sns.Subscription(this, "HighValueOrders", {
 
 **Answer:**
 
-| Concern | Solution |
-| --- | --- |
-| Target temporarily down | Built-in retry with backoff (HTTP: up to 23 days) |
-| Lambda invocation failure | DLQ on subscription |
-| Message loss | SNS is multi-AZ durable; add DLQ for delivery failures |
-| Fan-out ordering | Use FIFO topic + FIFO SQS subscriptions |
-| Cross-region failure | Publish to topics in multiple regions |
-| Subscriber overwhelmed | Buffer with SQS subscription |
+| Concern                   | Solution                                               |
+| ------------------------- | ------------------------------------------------------ |
+| Target temporarily down   | Built-in retry with backoff (HTTP: up to 23 days)      |
+| Lambda invocation failure | DLQ on subscription                                    |
+| Message loss              | SNS is multi-AZ durable; add DLQ for delivery failures |
+| Fan-out ordering          | Use FIFO topic + FIFO SQS subscriptions                |
+| Cross-region failure      | Publish to topics in multiple regions                  |
+| Subscriber overwhelmed    | Buffer with SQS subscription                           |
 
 > **Production Tip:** Always set a DLQ (redrive policy) on HTTP/Lambda subscriptions. Without it, messages that fail all retries are silently dropped.

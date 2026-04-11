@@ -22,15 +22,15 @@ A curated list of **Amazon OpenSearch Service interview questions** with practic
 
 **Answer:**
 
-| Use OpenSearch When | Don't Use OpenSearch When |
-| --- | --- |
-| Full-text search with relevance ranking | Simple key-value lookups (use DynamoDB) |
-| Log analytics and observability | Relational queries with joins (use RDS/Aurora) |
-| Fuzzy/typo-tolerant search | Primary database / source of truth |
-| Faceted search and aggregations | Simple filtering on structured data (use DynamoDB + GSI) |
-| Real-time dashboards on time-series data | Long-term archival (use S3 + Athena) |
-| Geospatial search | Write-heavy OLTP (use DynamoDB/RDS) |
-| SIEM / security analytics | Small dataset under 100K records (overkill) |
+| Use OpenSearch When                      | Don't Use OpenSearch When                                |
+| ---------------------------------------- | -------------------------------------------------------- |
+| Full-text search with relevance ranking  | Simple key-value lookups (use DynamoDB)                  |
+| Log analytics and observability          | Relational queries with joins (use RDS/Aurora)           |
+| Fuzzy/typo-tolerant search               | Primary database / source of truth                       |
+| Faceted search and aggregations          | Simple filtering on structured data (use DynamoDB + GSI) |
+| Real-time dashboards on time-series data | Long-term archival (use S3 + Athena)                     |
+| Geospatial search                        | Write-heavy OLTP (use DynamoDB/RDS)                      |
+| SIEM / security analytics                | Small dataset under 100K records (overkill)              |
 
 > **System Design Tip:** OpenSearch is a **secondary index**, not a primary database. Always have a source of truth (DynamoDB, RDS, S3) and replicate to OpenSearch for search functionality.
 
@@ -84,7 +84,12 @@ const result = await client.search({
     query: {
       bool: {
         must: [
-          { multi_match: { query: "wireless mouse", fields: ["name^3", "description"] } },
+          {
+            multi_match: {
+              query: "wireless mouse",
+              fields: ["name^3", "description"],
+            },
+          },
         ],
         filter: [
           { range: { price: { lte: 50 } } },
@@ -104,16 +109,16 @@ const result = await client.search({
 
 **Answer:**
 
-| Parameter | Description | Production Recommendation |
-| --- | --- | --- |
-| **Instance type** | Compute for data nodes | `r6g.xlarge` for search; `r6g.2xlarge` for log analytics |
-| **Data nodes** | Store and serve data | Minimum 2 (multi-AZ); 3+ for production |
-| **Dedicated master nodes** | Cluster coordination | Always 3 for production (odd number) |
-| **EBS volume** | Storage per node | gp3; size = data × (1 + replicas) / nodes × 1.45 |
-| **Replica count** | Copies of each shard | 1 in multi-AZ (2 for critical data) |
-| **Shard count** | Partitions per index | Target 10–50 GB per shard |
-| **Zone awareness** | Multi-AZ deployment | Always enable for production |
-| **UltraWarm** | Warm storage tier | Use for logs >30 days (90% cheaper) |
+| Parameter                  | Description            | Production Recommendation                                |
+| -------------------------- | ---------------------- | -------------------------------------------------------- |
+| **Instance type**          | Compute for data nodes | `r6g.xlarge` for search; `r6g.2xlarge` for log analytics |
+| **Data nodes**             | Store and serve data   | Minimum 2 (multi-AZ); 3+ for production                  |
+| **Dedicated master nodes** | Cluster coordination   | Always 3 for production (odd number)                     |
+| **EBS volume**             | Storage per node       | gp3; size = data × (1 + replicas) / nodes × 1.45         |
+| **Replica count**          | Copies of each shard   | 1 in multi-AZ (2 for critical data)                      |
+| **Shard count**            | Partitions per index   | Target 10–50 GB per shard                                |
+| **Zone awareness**         | Multi-AZ deployment    | Always enable for production                             |
+| **UltraWarm**              | Warm storage tier      | Use for logs >30 days (90% cheaper)                      |
 
 ```ts
 // CDK: Production OpenSearch cluster
@@ -135,9 +140,9 @@ const domain = new opensearch.Domain(this, "SearchDomain", {
 
   // Storage
   ebs: {
-    volumeSize: 100,    // GB per node
+    volumeSize: 100, // GB per node
     volumeType: ec2.EbsDeviceVolumeType.GP3,
-    throughput: 250,     // MB/s for gp3
+    throughput: 250, // MB/s for gp3
     iops: 3000,
   },
 
@@ -177,7 +182,7 @@ await client.indices.create({
     settings: {
       number_of_shards: 3,
       number_of_replicas: 1,
-      "index.refresh_interval": "5s",     // Balance between freshness and perf
+      "index.refresh_interval": "5s", // Balance between freshness and perf
       "index.translog.durability": "async", // Faster indexing (slight data risk)
       "index.translog.sync_interval": "5s",
     },
@@ -190,9 +195,9 @@ await client.indices.create({
         },
         description: { type: "text" },
         price: { type: "float" },
-        category: { type: "keyword" },   // keyword = exact match, no analysis
+        category: { type: "keyword" }, // keyword = exact match, no analysis
         tags: { type: "keyword" },
-        location: { type: "geo_point" },  // Geospatial search
+        location: { type: "geo_point" }, // Geospatial search
         created_at: { type: "date" },
         metadata: { type: "object", enabled: false }, // Store but don't index
       },
@@ -203,14 +208,14 @@ await client.indices.create({
 
 **Key mapping decisions:**
 
-| Field Type | Use | Don't Use |
-| --- | --- | --- |
-| `text` | Full-text search (analyzed) | Exact matching, aggregations |
-| `keyword` | Filtering, sorting, aggregations | Full-text search |
-| `text` + `keyword` subfield | Searching AND filtering same field | Simple use cases |
-| `enabled: false` | Store without indexing | If you ever need to search/filter |
-| `date` | Time-series, range queries | String dates (no range queries) |
-| `nested` | Array of objects with independent matching | Simple arrays (use `keyword`) |
+| Field Type                  | Use                                        | Don't Use                         |
+| --------------------------- | ------------------------------------------ | --------------------------------- |
+| `text`                      | Full-text search (analyzed)                | Exact matching, aggregations      |
+| `keyword`                   | Filtering, sorting, aggregations           | Full-text search                  |
+| `text` + `keyword` subfield | Searching AND filtering same field         | Simple use cases                  |
+| `enabled: false`            | Store without indexing                     | If you ever need to search/filter |
+| `date`                      | Time-series, range queries                 | String dates (no range queries)   |
+| `nested`                    | Array of objects with independent matching | Simple arrays (use `keyword`)     |
 
 > **Hidden Property:** Use `"index": false` on fields you never search/filter. Saves CPU and disk. Use `"doc_values": false` on text fields you never sort/aggregate.
 
@@ -239,14 +244,14 @@ for (const product of products) {
 
 **Search performance:**
 
-| Strategy | Impact | How |
-| --- | --- | --- |
-| Use `filter` context | 30–50% faster (cached, no scoring) | Move non-scoring clauses to `filter` |
-| Limit `_source` fields | Reduce network I/O | `_source: ["name", "price"]` |
-| Use `keyword` for exact match | 10x faster than `text` for filtering | Map filterable fields as `keyword` |
-| Avoid deep pagination | Memory explosion | Use `search_after` instead of `from/size` |
-| Warm up frequently used indices | Faster first queries | `POST /index/_forcemerge?max_num_segments=1` |
-| Right-size shards | 10–50 GB per shard | Too many small shards = overhead |
+| Strategy                        | Impact                               | How                                          |
+| ------------------------------- | ------------------------------------ | -------------------------------------------- |
+| Use `filter` context            | 30–50% faster (cached, no scoring)   | Move non-scoring clauses to `filter`         |
+| Limit `_source` fields          | Reduce network I/O                   | `_source: ["name", "price"]`                 |
+| Use `keyword` for exact match   | 10x faster than `text` for filtering | Map filterable fields as `keyword`           |
+| Avoid deep pagination           | Memory explosion                     | Use `search_after` instead of `from/size`    |
+| Warm up frequently used indices | Faster first queries                 | `POST /index/_forcemerge?max_num_segments=1` |
+| Right-size shards               | 10–50 GB per shard                   | Too many small shards = overhead             |
 
 ```ts
 // ✅ Use search_after for deep pagination (not from/size)
@@ -276,16 +281,16 @@ do {
 
 **Answer:**
 
-| Concern | Solution |
-| --- | --- |
-| Node failure | Multi-AZ deployment with replicas |
-| Index corruption | Automated daily snapshots (14-day retention) |
-| Data loss | Replicas + manual snapshots to S3 |
-| Split brain | 3 dedicated master nodes (quorum-based) |
-| Traffic spike | Auto-Tune (adjusts JVM, queue sizes) |
-| Index mapping conflicts | Use index templates with strict mappings |
-| Disk full | Set watermark alerts at 75% disk usage |
-| Blue/green deploy failure | Automated by AWS during config changes |
+| Concern                   | Solution                                     |
+| ------------------------- | -------------------------------------------- |
+| Node failure              | Multi-AZ deployment with replicas            |
+| Index corruption          | Automated daily snapshots (14-day retention) |
+| Data loss                 | Replicas + manual snapshots to S3            |
+| Split brain               | 3 dedicated master nodes (quorum-based)      |
+| Traffic spike             | Auto-Tune (adjusts JVM, queue sizes)         |
+| Index mapping conflicts   | Use index templates with strict mappings     |
+| Disk full                 | Set watermark alerts at 75% disk usage       |
+| Blue/green deploy failure | Automated by AWS during config changes       |
 
 ```ts
 // CDK: Snapshot configuration + alarms
@@ -302,7 +307,8 @@ new cloudwatch.Alarm(this, "DiskAlarm", {
   metric: domain.metricFreeStorageSpace(),
   threshold: 20_000, // 20 GB free remaining
   evaluationPeriods: 1,
-  comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_OR_EQUAL_TO_THRESHOLD,
+  comparisonOperator:
+    cloudwatch.ComparisonOperator.LESS_THAN_OR_EQUAL_TO_THRESHOLD,
   alarmDescription: "OpenSearch cluster running low on disk",
 });
 
@@ -334,15 +340,19 @@ await client.transport.request({
         {
           name: "hot",
           actions: [{ rollover: { min_index_age: "1d", min_size: "50gb" } }],
-          transitions: [{ state_name: "warm", conditions: { min_index_age: "7d" } }],
+          transitions: [
+            { state_name: "warm", conditions: { min_index_age: "7d" } },
+          ],
         },
         {
           name: "warm",
           actions: [
             { replica_count: { number_of_replicas: 0 } },
-            { force_merge: { max_num_segments: 1 } },    // Optimize storage
+            { force_merge: { max_num_segments: 1 } }, // Optimize storage
           ],
-          transitions: [{ state_name: "delete", conditions: { min_index_age: "90d" } }],
+          transitions: [
+            { state_name: "delete", conditions: { min_index_age: "90d" } },
+          ],
         },
         {
           name: "delete",
@@ -378,31 +388,37 @@ await client.indices.putIndexTemplate({
 
 **Answer:** OpenSearch Serverless removes cluster management entirely — no nodes, shards, or capacity planning.
 
-| Feature | Managed OpenSearch | OpenSearch Serverless |
-| --- | --- | --- |
-| **Management** | You size/manage cluster | Fully managed |
-| **Scaling** | Manual or Auto-Tune | Automatic |
-| **Pricing** | Per instance-hour + storage | OCU-hours ($0.24/OCU-hr) + storage |
-| **Min cost** | ~$50/month (t3.small) | ~$350/month (min 4 OCUs) |
-| **Use case** | Predictable workloads | Variable/unpredictable workloads |
-| **APIs** | Full OpenSearch API | Subset (no ISM, limited admin) |
-| **Collection types** | N/A | Search, Time-series, Vector search |
+| Feature              | Managed OpenSearch          | OpenSearch Serverless              |
+| -------------------- | --------------------------- | ---------------------------------- |
+| **Management**       | You size/manage cluster     | Fully managed                      |
+| **Scaling**          | Manual or Auto-Tune         | Automatic                          |
+| **Pricing**          | Per instance-hour + storage | OCU-hours ($0.24/OCU-hr) + storage |
+| **Min cost**         | ~$50/month (t3.small)       | ~$350/month (min 4 OCUs)           |
+| **Use case**         | Predictable workloads       | Variable/unpredictable workloads   |
+| **APIs**             | Full OpenSearch API         | Subset (no ISM, limited admin)     |
+| **Collection types** | N/A                         | Search, Time-series, Vector search |
 
 ```ts
 // CDK: OpenSearch Serverless collection
 import * as opensearchserverless from "aws-cdk-lib/aws-opensearchserverless";
 
-const collection = new opensearchserverless.CfnCollection(this, "SearchCollection", {
-  name: "product-search",
-  type: "SEARCH",
-});
+const collection = new opensearchserverless.CfnCollection(
+  this,
+  "SearchCollection",
+  {
+    name: "product-search",
+    type: "SEARCH",
+  },
+);
 
 // Security policy (required)
 new opensearchserverless.CfnSecurityPolicy(this, "EncPolicy", {
   name: "product-search-enc",
   type: "encryption",
   policy: JSON.stringify({
-    Rules: [{ ResourceType: "collection", Resource: ["collection/product-search"] }],
+    Rules: [
+      { ResourceType: "collection", Resource: ["collection/product-search"] },
+    ],
     AWSOwnedKey: true,
   }),
 });
@@ -410,10 +426,14 @@ new opensearchserverless.CfnSecurityPolicy(this, "EncPolicy", {
 new opensearchserverless.CfnSecurityPolicy(this, "NetPolicy", {
   name: "product-search-net",
   type: "network",
-  policy: JSON.stringify([{
-    Rules: [{ ResourceType: "collection", Resource: ["collection/product-search"] }],
-    AllowFromPublic: true,
-  }]),
+  policy: JSON.stringify([
+    {
+      Rules: [
+        { ResourceType: "collection", Resource: ["collection/product-search"] },
+      ],
+      AllowFromPublic: true,
+    },
+  ]),
 });
 ```
 
@@ -425,24 +445,24 @@ new opensearchserverless.CfnSecurityPolicy(this, "NetPolicy", {
 
 **Answer:**
 
-| Strategy | Savings | Effort |
-| --- | --- | --- |
-| Use UltraWarm for logs >30 days | ~90% vs hot storage | Low (ISM policy) |
-| Cold storage for >90 days | ~95% vs hot storage | Low (ISM policy) |
-| Right-size instances | 20–50% | Medium (load testing) |
-| Reduce replica count on non-critical indices | 50% storage | Low |
-| Use `_source` filtering on large docs | Reduces I/O costs | Low |
-| gp3 volumes (not gp2) | 20% cheaper + better IOPS | Low |
-| Reserved instances (1yr/3yr) | 30–50% | Commit required |
-| Disable unused features (slow logs, etc.) | Minor savings | Low |
+| Strategy                                     | Savings                   | Effort                |
+| -------------------------------------------- | ------------------------- | --------------------- |
+| Use UltraWarm for logs >30 days              | ~90% vs hot storage       | Low (ISM policy)      |
+| Cold storage for >90 days                    | ~95% vs hot storage       | Low (ISM policy)      |
+| Right-size instances                         | 20–50%                    | Medium (load testing) |
+| Reduce replica count on non-critical indices | 50% storage               | Low                   |
+| Use `_source` filtering on large docs        | Reduces I/O costs         | Low                   |
+| gp3 volumes (not gp2)                        | 20% cheaper + better IOPS | Low                   |
+| Reserved instances (1yr/3yr)                 | 30–50%                    | Commit required       |
+| Disable unused features (slow logs, etc.)    | Minor savings             | Low                   |
 
 **Cost comparison (3-node production cluster, us-east-1):**
 
-| Tier | Instance | Storage | Monthly Cost |
-| --- | --- | --- | --- |
-| Dev/Test | `t3.medium.search` × 2 | 50 GB gp3 | ~$120 |
-| Production | `r6g.xlarge.search` × 3 + 3 masters | 200 GB gp3 | ~$900 |
-| Large-scale | `r6g.2xlarge.search` × 6 + 3 masters | 500 GB gp3 | ~$2,500 |
+| Tier        | Instance                             | Storage    | Monthly Cost |
+| ----------- | ------------------------------------ | ---------- | ------------ |
+| Dev/Test    | `t3.medium.search` × 2               | 50 GB gp3  | ~$120        |
+| Production  | `r6g.xlarge.search` × 3 + 3 masters  | 200 GB gp3 | ~$900        |
+| Large-scale | `r6g.2xlarge.search` × 6 + 3 masters | 500 GB gp3 | ~$2,500      |
 
 ---
 
@@ -515,22 +535,27 @@ const result = await client.search({
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **Auto-Tune** | Automatically adjusts JVM heap, queue sizes | Prevents OOM and performance degradation |
-| **Slow log queries** | Log queries exceeding threshold | Identify and fix performance bottlenecks |
-| **Index templates** | Auto-apply settings to matching indices | Consistent mappings across time-series indices |
-| **Alias routing** | Route writes to one index, reads to many | Zero-downtime reindexing |
-| **Field caps API** | Discover field types across indices | Useful for dynamic dashboards |
-| **Profile API** | Detailed query execution breakdown | Debug why a specific query is slow |
-| **Anomaly detection** | ML-based anomaly detection on metrics | Alerting without manual thresholds |
-| **Cross-cluster search** | Query across multiple domains | Multi-region search architecture |
-| **Painless scripting** | In-query transformations | Custom scoring, field computation |
+| Feature                  | What It Does                                | Why It Matters                                 |
+| ------------------------ | ------------------------------------------- | ---------------------------------------------- |
+| **Auto-Tune**            | Automatically adjusts JVM heap, queue sizes | Prevents OOM and performance degradation       |
+| **Slow log queries**     | Log queries exceeding threshold             | Identify and fix performance bottlenecks       |
+| **Index templates**      | Auto-apply settings to matching indices     | Consistent mappings across time-series indices |
+| **Alias routing**        | Route writes to one index, reads to many    | Zero-downtime reindexing                       |
+| **Field caps API**       | Discover field types across indices         | Useful for dynamic dashboards                  |
+| **Profile API**          | Detailed query execution breakdown          | Debug why a specific query is slow             |
+| **Anomaly detection**    | ML-based anomaly detection on metrics       | Alerting without manual thresholds             |
+| **Cross-cluster search** | Query across multiple domains               | Multi-region search architecture               |
+| **Painless scripting**   | In-query transformations                    | Custom scoring, field computation              |
 
 ```ts
 // Alias-based zero-downtime reindexing
 // 1. Create new index with updated mappings
-await client.indices.create({ index: "products-v2", body: { /* new mapping */ } });
+await client.indices.create({
+  index: "products-v2",
+  body: {
+    /* new mapping */
+  },
+});
 
 // 2. Reindex data
 await client.reindex({
@@ -613,8 +638,8 @@ export const handler = async (event: DynamoDBStreamEvent) => {
   if (bulkBody.length > 0) {
     const result = await client.bulk({ body: bulkBody });
     if (result.body.errors) {
-      const failed = result.body.items.filter((i: any) =>
-        Object.values(i)[0].error,
+      const failed = result.body.items.filter(
+        (i: any) => Object.values(i)[0].error,
       );
       console.error("Bulk indexing failures:", JSON.stringify(failed));
     }
@@ -628,16 +653,16 @@ export const handler = async (event: DynamoDBStreamEvent) => {
 
 **Answer:**
 
-| Metric | Healthy Value | Alert Threshold |
-| --- | --- | --- |
-| `ClusterStatus.red` | 0 | ≥ 1 (immediate) |
-| `ClusterStatus.yellow` | 0 | ≥ 1 (investigate) |
-| `FreeStorageSpace` | >20% of total | < 25% remaining |
-| `JVMMemoryPressure` | < 80% | > 80% (GC issues) |
-| `CPUUtilization` | < 70% | > 80% sustained |
-| `SearchLatency` | < 100ms (p99) | > 500ms |
-| `IndexingLatency` | < 50ms (p99) | > 200ms |
-| `ThreadpoolSearchRejected` | 0 | > 0 (queue full) |
-| `AutomatedSnapshotFailure` | 0 | > 0 |
+| Metric                     | Healthy Value | Alert Threshold   |
+| -------------------------- | ------------- | ----------------- |
+| `ClusterStatus.red`        | 0             | ≥ 1 (immediate)   |
+| `ClusterStatus.yellow`     | 0             | ≥ 1 (investigate) |
+| `FreeStorageSpace`         | >20% of total | < 25% remaining   |
+| `JVMMemoryPressure`        | < 80%         | > 80% (GC issues) |
+| `CPUUtilization`           | < 70%         | > 80% sustained   |
+| `SearchLatency`            | < 100ms (p99) | > 500ms           |
+| `IndexingLatency`          | < 50ms (p99)  | > 200ms           |
+| `ThreadpoolSearchRejected` | 0             | > 0 (queue full)  |
+| `AutomatedSnapshotFailure` | 0             | > 0               |
 
 > **Hidden Gem:** `ThreadpoolSearchRejected` and `ThreadpoolWriteRejected` are early indicators of an overloaded cluster. If these spike, scale up before users notice latency.

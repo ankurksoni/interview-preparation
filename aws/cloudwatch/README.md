@@ -521,46 +521,52 @@ await cw.send(
 
 **Answer:**
 
-| Component | Cost | Optimization |
-| --- | --- | --- |
-| Custom metrics | $0.30/metric/month | Minimize dimensions; use EMF for bulk |
-| Log ingestion | $0.50/GB | Filter at source; compress; use log levels |
-| Log storage | $0.03/GB/month | Set retention policies (don't keep forever) |
-| Dashboards | $3/dashboard/month | Consolidate; use 1 dashboard per service |
-| Alarms | $0.10/alarm/month | Use composite alarms to reduce count |
-| Metric queries (Insights/Math) | $0.005 per 1,000 metrics scanned | Pre-aggregate with metric filters |
-| Contributor Insights | $0.02 per rule/rule match | Use only for top-N analysis |
+| Component                      | Cost                             | Optimization                                |
+| ------------------------------ | -------------------------------- | ------------------------------------------- |
+| Custom metrics                 | $0.30/metric/month               | Minimize dimensions; use EMF for bulk       |
+| Log ingestion                  | $0.50/GB                         | Filter at source; compress; use log levels  |
+| Log storage                    | $0.03/GB/month                   | Set retention policies (don't keep forever) |
+| Dashboards                     | $3/dashboard/month               | Consolidate; use 1 dashboard per service    |
+| Alarms                         | $0.10/alarm/month                | Use composite alarms to reduce count        |
+| Metric queries (Insights/Math) | $0.005 per 1,000 metrics scanned | Pre-aggregate with metric filters           |
+| Contributor Insights           | $0.02 per rule/rule match        | Use only for top-N analysis                 |
 
 ```ts
 // ❌ Bad: High-cardinality custom metrics (explosion of dimensions)
 cloudwatch.putMetricData({
   Namespace: "MyApp",
-  MetricData: [{
-    MetricName: "RequestLatency",
-    Dimensions: [
-      { Name: "UserId", Value: userId },      // Millions of unique values!
-      { Name: "Endpoint", Value: endpoint },
-    ],
-    Value: latencyMs,
-  }],
+  MetricData: [
+    {
+      MetricName: "RequestLatency",
+      Dimensions: [
+        { Name: "UserId", Value: userId }, // Millions of unique values!
+        { Name: "Endpoint", Value: endpoint },
+      ],
+      Value: latencyMs,
+    },
+  ],
 });
 
 // ✅ Good: Low-cardinality dimensions + EMF for detail
 // Use EMF (Embedded Metric Format) in Lambda for zero-cost metric publishing
-console.log(JSON.stringify({
-  _aws: {
-    Timestamp: Date.now(),
-    CloudWatchMetrics: [{
-      Namespace: "MyApp",
-      Dimensions: [["Service", "Endpoint"]],
-      Metrics: [{ Name: "RequestLatency", Unit: "Milliseconds" }],
-    }],
-  },
-  Service: "OrderService",
-  Endpoint: "/orders",
-  RequestLatency: latencyMs,
-  UserId: userId, // Searchable in Logs Insights, but NOT a dimension
-}));
+console.log(
+  JSON.stringify({
+    _aws: {
+      Timestamp: Date.now(),
+      CloudWatchMetrics: [
+        {
+          Namespace: "MyApp",
+          Dimensions: [["Service", "Endpoint"]],
+          Metrics: [{ Name: "RequestLatency", Unit: "Milliseconds" }],
+        },
+      ],
+    },
+    Service: "OrderService",
+    Endpoint: "/orders",
+    RequestLatency: latencyMs,
+    UserId: userId, // Searchable in Logs Insights, but NOT a dimension
+  }),
+);
 ```
 
 ---
@@ -569,17 +575,17 @@ console.log(JSON.stringify({
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **EMF (Embedded Metric Format)** | Publish metrics via structured log lines | Zero API calls, auto-extracted as metrics |
-| **Composite alarms** | Combine alarms with AND/OR logic | Reduce alert noise |
-| **Anomaly detection** | ML-based dynamic thresholds | No manual threshold tuning |
-| **Contributor Insights** | Top-N analysis on log fields | Find top callers, top error sources |
-| **Metric math expressions** | Compute derived metrics inline | Error rates, percentages without custom code |
-| **Cross-account observability** | View metrics/logs from other accounts | Centralized monitoring |
-| **Log Insights saved queries** | Reusable queries with parameters | Team-shared troubleshooting playbooks |
-| **Metric streams** | Real-time export to Datadog/S3/Firehose | Third-party integration without polling |
-| **Lambda Insights** | Enhanced Lambda metrics (memory, CPU) | Find memory leaks, right-size functions |
+| Feature                          | What It Does                             | Why It Matters                               |
+| -------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| **EMF (Embedded Metric Format)** | Publish metrics via structured log lines | Zero API calls, auto-extracted as metrics    |
+| **Composite alarms**             | Combine alarms with AND/OR logic         | Reduce alert noise                           |
+| **Anomaly detection**            | ML-based dynamic thresholds              | No manual threshold tuning                   |
+| **Contributor Insights**         | Top-N analysis on log fields             | Find top callers, top error sources          |
+| **Metric math expressions**      | Compute derived metrics inline           | Error rates, percentages without custom code |
+| **Cross-account observability**  | View metrics/logs from other accounts    | Centralized monitoring                       |
+| **Log Insights saved queries**   | Reusable queries with parameters         | Team-shared troubleshooting playbooks        |
+| **Metric streams**               | Real-time export to Datadog/S3/Firehose  | Third-party integration without polling      |
+| **Lambda Insights**              | Enhanced Lambda metrics (memory, CPU)    | Find memory leaks, right-size functions      |
 
 ```ts
 // CDK: Composite alarm to reduce alert noise

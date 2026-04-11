@@ -10,11 +10,11 @@ A curated list of **Amazon API Gateway interview questions** with practical, pro
 
 **Three API types:**
 
-| Type | Protocol | Use Case | Pricing |
-| --- | --- | --- | --- |
-| **REST API** | REST | Full-featured (caching, WAF, resource policies, API keys) | $3.50/million requests |
-| **HTTP API** | REST | Lower cost, simpler, JWT auth, faster | $1.00/million requests |
-| **WebSocket API** | WebSocket | Real-time bidirectional (chat, gaming, live updates) | $1.00/million msgs + $0.25/million connection-min |
+| Type              | Protocol  | Use Case                                                  | Pricing                                           |
+| ----------------- | --------- | --------------------------------------------------------- | ------------------------------------------------- |
+| **REST API**      | REST      | Full-featured (caching, WAF, resource policies, API keys) | $3.50/million requests                            |
+| **HTTP API**      | REST      | Lower cost, simpler, JWT auth, faster                     | $1.00/million requests                            |
+| **WebSocket API** | WebSocket | Real-time bidirectional (chat, gaming, live updates)      | $1.00/million msgs + $0.25/million connection-min |
 
 > **System Design Tip:** Default to **HTTP API** unless you specifically need REST API features (caching, WAF integration, request validation, API key usage plans). HTTP API is 71% cheaper and has lower latency (~10ms less).
 
@@ -24,21 +24,21 @@ A curated list of **Amazon API Gateway interview questions** with practical, pro
 
 **Answer:**
 
-| Use API Gateway When | Don't Use API Gateway When |
-| --- | --- |
-| Serverless APIs (Lambda backend) | Ultra-low-latency APIs (<10ms overhead) |
-| Rate limiting and throttling needed | gRPC services (use ALB or NLB) |
-| Multiple auth strategies (IAM, JWT, Cognito) | Internal service-to-service calls (use ALB/NLB) |
-| API versioning and staged rollouts | Large file uploads >10MB payload (use S3 presigned URLs) |
-| Request/response transformation | GraphQL APIs (use AppSync) |
-| WebSocket real-time communication | Very high throughput (>10K RPS sustained, consider ALB) |
-| Public-facing APIs | Simple static content (use CloudFront) |
+| Use API Gateway When                         | Don't Use API Gateway When                               |
+| -------------------------------------------- | -------------------------------------------------------- |
+| Serverless APIs (Lambda backend)             | Ultra-low-latency APIs (<10ms overhead)                  |
+| Rate limiting and throttling needed          | gRPC services (use ALB or NLB)                           |
+| Multiple auth strategies (IAM, JWT, Cognito) | Internal service-to-service calls (use ALB/NLB)          |
+| API versioning and staged rollouts           | Large file uploads >10MB payload (use S3 presigned URLs) |
+| Request/response transformation              | GraphQL APIs (use AppSync)                               |
+| WebSocket real-time communication            | Very high throughput (>10K RPS sustained, consider ALB)  |
+| Public-facing APIs                           | Simple static content (use CloudFront)                   |
 
 **Payload limits:**
 
-| Limit | REST API | HTTP API | WebSocket |
-| --- | --- | --- | --- |
-| Max payload | 10 MB | 10 MB | 128 KB per frame |
+| Limit       | REST API   | HTTP API   | WebSocket                    |
+| ----------- | ---------- | ---------- | ---------------------------- |
+| Max payload | 10 MB      | 10 MB      | 128 KB per frame             |
 | Max timeout | 29 seconds | 29 seconds | 2 hours idle, 10 min message |
 
 ---
@@ -68,15 +68,15 @@ const api = new apigateway.RestApi(this, "ProductApi", {
   description: "Product catalog API",
   deployOptions: {
     stageName: "prod",
-    throttlingRateLimit: 1000,      // 1000 requests/sec
-    throttlingBurstLimit: 2000,     // Burst up to 2000
+    throttlingRateLimit: 1000, // 1000 requests/sec
+    throttlingBurstLimit: 2000, // Burst up to 2000
     loggingLevel: apigateway.MethodLoggingLevel.INFO,
-    dataTraceEnabled: false,        // Don't log request/response bodies in prod
+    dataTraceEnabled: false, // Don't log request/response bodies in prod
     metricsEnabled: true,
-    tracingEnabled: true,           // X-Ray tracing
+    tracingEnabled: true, // X-Ray tracing
     cachingEnabled: true,
     cacheClusterEnabled: true,
-    cacheClusterSize: "0.5",        // GB
+    cacheClusterSize: "0.5", // GB
     cacheTtl: cdk.Duration.minutes(5),
   },
   defaultCorsPreflightOptions: {
@@ -123,9 +123,13 @@ const httpApi = new apigwv2.HttpApi(this, "HttpApi", {
     allowHeaders: ["Content-Type", "Authorization"],
     maxAge: cdk.Duration.hours(1),
   },
-  defaultAuthorizer: new authorizers.HttpJwtAuthorizer("JwtAuth", "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123", {
-    jwtAudience: ["my-api-client-id"],
-  }),
+  defaultAuthorizer: new authorizers.HttpJwtAuthorizer(
+    "JwtAuth",
+    "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc123",
+    {
+      jwtAudience: ["my-api-client-id"],
+    },
+  ),
 });
 
 httpApi.addRoutes({
@@ -143,19 +147,19 @@ httpApi.addRoutes({
 
 **Feature comparison:**
 
-| Feature | REST API | HTTP API |
-| --- | --- | --- |
-| Price | $3.50/M requests | $1.00/M requests |
-| Latency | ~15ms overhead | ~5ms overhead |
-| Caching | Built-in (0.5–237 GB) | No (use CloudFront) |
-| WAF | Yes | No |
-| API Keys / Usage Plans | Yes | No |
-| Request validation | Yes | No (validate in Lambda) |
-| Request/response transforms | VTL templates | No |
-| JWT authorizer | Via Lambda | Native |
-| IAM auth | Yes | Yes |
-| Resource policies | Yes | No |
-| Private integrations | Yes | Yes |
+| Feature                     | REST API              | HTTP API                |
+| --------------------------- | --------------------- | ----------------------- |
+| Price                       | $3.50/M requests      | $1.00/M requests        |
+| Latency                     | ~15ms overhead        | ~5ms overhead           |
+| Caching                     | Built-in (0.5–237 GB) | No (use CloudFront)     |
+| WAF                         | Yes                   | No                      |
+| API Keys / Usage Plans      | Yes                   | No                      |
+| Request validation          | Yes                   | No (validate in Lambda) |
+| Request/response transforms | VTL templates         | No                      |
+| JWT authorizer              | Via Lambda            | Native                  |
+| IAM auth                    | Yes                   | Yes                     |
+| Resource policies           | Yes                   | No                      |
+| Private integrations        | Yes                   | Yes                     |
 
 ---
 
@@ -163,17 +167,17 @@ httpApi.addRoutes({
 
 **Answer:**
 
-| Parameter | Description | Production Recommendation |
-| --- | --- | --- |
-| `throttlingRateLimit` | Steady-state requests/second | Set per stage and per method |
-| `throttlingBurstLimit` | Max concurrent requests | 2× rate limit |
-| `cacheClusterSize` | Cache size in GB (REST only) | 0.5–6.1 GB based on response sizes |
-| `cacheTtl` | Cache duration per method | 60–300s for read-heavy; 0 for writes |
-| `loggingLevel` | CloudWatch log verbosity | INFO in prod, ERROR minimum |
-| `dataTraceEnabled` | Log full request/response | **false in prod** (PII risk, cost) |
-| `tracingEnabled` | X-Ray tracing | Enable for debugging latency |
-| `minimumCompressionSize` | Gzip responses above size | 1000 bytes (saves bandwidth) |
-| `timeout` | Backend integration timeout | Set close to Lambda timeout |
+| Parameter                | Description                  | Production Recommendation            |
+| ------------------------ | ---------------------------- | ------------------------------------ |
+| `throttlingRateLimit`    | Steady-state requests/second | Set per stage and per method         |
+| `throttlingBurstLimit`   | Max concurrent requests      | 2× rate limit                        |
+| `cacheClusterSize`       | Cache size in GB (REST only) | 0.5–6.1 GB based on response sizes   |
+| `cacheTtl`               | Cache duration per method    | 60–300s for read-heavy; 0 for writes |
+| `loggingLevel`           | CloudWatch log verbosity     | INFO in prod, ERROR minimum          |
+| `dataTraceEnabled`       | Log full request/response    | **false in prod** (PII risk, cost)   |
+| `tracingEnabled`         | X-Ray tracing                | Enable for debugging latency         |
+| `minimumCompressionSize` | Gzip responses above size    | 1000 bytes (saves bandwidth)         |
+| `timeout`                | Backend integration timeout  | Set close to Lambda timeout          |
 
 ```ts
 // Per-method throttling (important for write protection)
@@ -210,10 +214,14 @@ products.addMethod("GET", integration, {
 });
 
 // 2. Cognito Authorizer (user pools)
-const cognitoAuth = new apigateway.CognitoUserPoolsAuthorizer(this, "CognitoAuth", {
-  cognitoUserPools: [userPool],
-  resultsCacheTtl: cdk.Duration.minutes(5),
-});
+const cognitoAuth = new apigateway.CognitoUserPoolsAuthorizer(
+  this,
+  "CognitoAuth",
+  {
+    cognitoUserPools: [userPool],
+    resultsCacheTtl: cdk.Duration.minutes(5),
+  },
+);
 
 products.addMethod("POST", integration, {
   authorizer: cognitoAuth,
@@ -240,7 +248,10 @@ const jwtAuth = new authorizers.HttpJwtAuthorizer("JwtAuth", issuerUrl, {
 **Lambda authorizer handler:**
 
 ```ts
-import { APIGatewayTokenAuthorizerEvent, APIGatewayAuthorizerResult } from "aws-lambda";
+import {
+  APIGatewayTokenAuthorizerEvent,
+  APIGatewayAuthorizerResult,
+} from "aws-lambda";
 
 export const handler = async (
   event: APIGatewayTokenAuthorizerEvent,
@@ -298,11 +309,11 @@ cfnMethod.addPropertyOverride("Integration.CacheKeyParameters", [
 
 **Cache strategies:**
 
-| Strategy | Use Case | TTL |
-| --- | --- | --- |
-| Full caching | Static catalog data | 300s |
-| Short cache | Frequently changing lists | 30–60s |
-| No cache | User-specific data, writes | 0 |
+| Strategy                | Use Case                         | TTL    |
+| ----------------------- | -------------------------------- | ------ |
+| Full caching            | Static catalog data              | 300s   |
+| Short cache             | Frequently changing lists        | 30–60s |
+| No cache                | User-specific data, writes       | 0      |
 | Cache key customization | Different cache per query params | Varies |
 
 > **Hidden Gem:** For HTTP APIs (which lack built-in caching), put **CloudFront in front** with cache behaviors. This gives you caching + WAF + global distribution at minimal extra cost.
@@ -314,7 +325,9 @@ import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 
 const distribution = new cloudfront.Distribution(this, "ApiCdn", {
   defaultBehavior: {
-    origin: new origins.HttpOrigin(`${httpApi.httpApiId}.execute-api.${cdk.Aws.REGION}.amazonaws.com`),
+    origin: new origins.HttpOrigin(
+      `${httpApi.httpApiId}.execute-api.${cdk.Aws.REGION}.amazonaws.com`,
+    ),
     viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
     cachePolicy: new cloudfront.CachePolicy(this, "ApiCachePolicy", {
       defaultTtl: cdk.Duration.minutes(5),
@@ -322,7 +335,8 @@ const distribution = new cloudfront.Distribution(this, "ApiCdn", {
       queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
       headerBehavior: cloudfront.CacheHeaderBehavior.allowList("Authorization"),
     }),
-    originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+    originRequestPolicy:
+      cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
   },
 });
 ```
@@ -347,7 +361,11 @@ const productModel = api.addModel("ProductModel", {
     type: apigateway.JsonSchemaType.OBJECT,
     required: ["name", "price"],
     properties: {
-      name: { type: apigateway.JsonSchemaType.STRING, minLength: 1, maxLength: 200 },
+      name: {
+        type: apigateway.JsonSchemaType.STRING,
+        minLength: 1,
+        maxLength: 200,
+      },
       price: { type: apigateway.JsonSchemaType.NUMBER, minimum: 0 },
       category: { type: apigateway.JsonSchemaType.STRING },
     },
@@ -365,7 +383,8 @@ api.addGatewayResponse("Throttled", {
   statusCode: "429",
   responseHeaders: { "Access-Control-Allow-Origin": "'*'" },
   templates: {
-    "application/json": '{"message":"Rate limit exceeded. Try again later.","requestId":"$context.requestId"}',
+    "application/json":
+      '{"message":"Rate limit exceeded. Try again later.","requestId":"$context.requestId"}',
   },
 });
 
@@ -374,7 +393,8 @@ api.addGatewayResponse("Unauthorized", {
   statusCode: "401",
   responseHeaders: { "Access-Control-Allow-Origin": "'*'" },
   templates: {
-    "application/json": '{"message":"Invalid or missing authentication token."}',
+    "application/json":
+      '{"message":"Invalid or missing authentication token."}',
   },
 });
 ```
@@ -387,15 +407,15 @@ api.addGatewayResponse("Unauthorized", {
 
 **Answer:**
 
-| Concern | Solution |
-| --- | --- |
-| Backend overload | Stage/method-level throttling |
-| Lambda cold starts | Provisioned concurrency on critical APIs |
-| Single region failure | Multi-region with Route 53 failover |
-| DDoS | WAF + rate limiting (REST API) |
-| Cascading failures | Set integration timeout < 29s |
-| Canary deployments | Stage canary settings (% traffic split) |
-| Breaking API changes | Use stage variables and versioning |
+| Concern               | Solution                                 |
+| --------------------- | ---------------------------------------- |
+| Backend overload      | Stage/method-level throttling            |
+| Lambda cold starts    | Provisioned concurrency on critical APIs |
+| Single region failure | Multi-region with Route 53 failover      |
+| DDoS                  | WAF + rate limiting (REST API)           |
+| Cascading failures    | Set integration timeout < 29s            |
+| Canary deployments    | Stage canary settings (% traffic split)  |
+| Breaking API changes  | Use stage variables and versioning       |
 
 ```ts
 // Canary deployment: Route 10% traffic to new version
@@ -406,8 +426,8 @@ const stage = new apigateway.Stage(this, "ProdStage", {
   stageName: "prod",
   // Canary settings
   canarySetting: {
-    percentTraffic: 10,       // 10% to canary
-    useStageCache: false,     // Don't corrupt main cache
+    percentTraffic: 10, // 10% to canary
+    useStageCache: false, // Don't corrupt main cache
   },
 });
 
@@ -433,14 +453,23 @@ import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 // WebSocket API
 const wsApi = new apigwv2.WebSocketApi(this, "ChatApi", {
   connectRouteOptions: {
-    integration: new integrations.WebSocketLambdaIntegration("ConnectIntegration", connectHandler),
+    integration: new integrations.WebSocketLambdaIntegration(
+      "ConnectIntegration",
+      connectHandler,
+    ),
     authorizer: wsAuthorizer,
   },
   disconnectRouteOptions: {
-    integration: new integrations.WebSocketLambdaIntegration("DisconnectIntegration", disconnectHandler),
+    integration: new integrations.WebSocketLambdaIntegration(
+      "DisconnectIntegration",
+      disconnectHandler,
+    ),
   },
   defaultRouteOptions: {
-    integration: new integrations.WebSocketLambdaIntegration("DefaultIntegration", messageHandler),
+    integration: new integrations.WebSocketLambdaIntegration(
+      "DefaultIntegration",
+      messageHandler,
+    ),
   },
 });
 
@@ -454,7 +483,10 @@ const wsStage = new apigwv2.WebSocketStage(this, "ProdStage", {
 **Send message back to connected client:**
 
 ```ts
-import { ApiGatewayManagementApiClient, PostToConnectionCommand } from "@aws-sdk/client-apigatewaymanagementapi";
+import {
+  ApiGatewayManagementApiClient,
+  PostToConnectionCommand,
+} from "@aws-sdk/client-apigatewaymanagementapi";
 
 export const handler = async (event: any) => {
   const { connectionId, body } = event.requestContext;
@@ -476,16 +508,18 @@ export const handler = async (event: any) => {
   const connections = await getActiveConnections(); // Your DynamoDB query
   await Promise.allSettled(
     connections.map((connId) =>
-      api.send(
-        new PostToConnectionCommand({
-          ConnectionId: connId,
-          Data: Buffer.from(JSON.stringify(message)),
+      api
+        .send(
+          new PostToConnectionCommand({
+            ConnectionId: connId,
+            Data: Buffer.from(JSON.stringify(message)),
+          }),
+        )
+        .catch(async (err) => {
+          if (err.statusCode === 410) {
+            await removeConnection(connId); // Stale connection
+          }
         }),
-      ).catch(async (err) => {
-        if (err.statusCode === 410) {
-          await removeConnection(connId); // Stale connection
-        }
-      }),
     ),
   );
 
@@ -499,15 +533,15 @@ export const handler = async (event: any) => {
 
 **Answer:**
 
-| Strategy | Savings | Effort |
-| --- | --- | --- |
-| Use HTTP API instead of REST API | 71% per request | Low (migration) |
-| Enable caching (REST) or CloudFront (HTTP) | Up to 90% on cache hits | Low |
-| Compress responses (`minimumCompressionSize`) | 60–80% data transfer cost | Low |
-| Cache Lambda authorizer results | Reduces authorizer invocations | Low |
-| Use direct AWS service integrations | Eliminate Lambda costs | Medium |
-| Regional endpoint (not Edge) | Lower data transfer | Low |
-| Request validation at API GW level | Avoid Lambda invocations for bad requests | Low |
+| Strategy                                      | Savings                                   | Effort          |
+| --------------------------------------------- | ----------------------------------------- | --------------- |
+| Use HTTP API instead of REST API              | 71% per request                           | Low (migration) |
+| Enable caching (REST) or CloudFront (HTTP)    | Up to 90% on cache hits                   | Low             |
+| Compress responses (`minimumCompressionSize`) | 60–80% data transfer cost                 | Low             |
+| Cache Lambda authorizer results               | Reduces authorizer invocations            | Low             |
+| Use direct AWS service integrations           | Eliminate Lambda costs                    | Medium          |
+| Regional endpoint (not Edge)                  | Lower data transfer                       | Low             |
+| Request validation at API GW level            | Avoid Lambda invocations for bad requests | Low             |
 
 **Direct service integration (skip Lambda):**
 
@@ -551,16 +585,16 @@ product.addMethod("GET", dynamoIntegration, {
 
 **Answer:**
 
-| Limit | Value | Workaround |
-| --- | --- | --- |
-| Requests/sec (account) | 10,000 (soft limit) | Request increase; use multiple accounts |
-| Burst limit | 5,000 | Throttle at usage plan level |
-| Payload size | 10 MB | Use S3 presigned URLs for large files |
-| Integration timeout | 29 seconds | Async pattern: API GW → SQS → Lambda |
-| WebSocket connections | 500/sec connect rate | Connection pooling on client |
-| APIs per account | 600 | Organize into fewer APIs with more resources |
-| Routes per API (HTTP) | 300 | Split into multiple APIs by domain |
-| Stage variables | 100 per stage | Use SSM Parameter Store for overflow |
+| Limit                  | Value                | Workaround                                   |
+| ---------------------- | -------------------- | -------------------------------------------- |
+| Requests/sec (account) | 10,000 (soft limit)  | Request increase; use multiple accounts      |
+| Burst limit            | 5,000                | Throttle at usage plan level                 |
+| Payload size           | 10 MB                | Use S3 presigned URLs for large files        |
+| Integration timeout    | 29 seconds           | Async pattern: API GW → SQS → Lambda         |
+| WebSocket connections  | 500/sec connect rate | Connection pooling on client                 |
+| APIs per account       | 600                  | Organize into fewer APIs with more resources |
+| Routes per API (HTTP)  | 300                  | Split into multiple APIs by domain           |
+| Stage variables        | 100 per stage        | Use SSM Parameter Store for overflow         |
 
 **Async pattern for long operations:**
 
@@ -592,16 +626,16 @@ const workerQueue = new sqs.Queue(this, "WorkerQueue", {
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **$context variables** | Access request metadata in VTL/logs | `$context.requestId` for tracing, `$context.identity.sourceIp` for logging |
-| **Gateway responses** | Customize error formats globally | Consistent error responses for 4xx/5xx |
-| **Canary releases** | % traffic routing to new deployment | Safe rollouts |
-| **Mock integrations** | Return hardcoded responses | API-first development, testing |
-| **VPC Links** | Private integrations to NLB/ALB | Access internal services |
-| **Stage variables** | Per-stage config (Lambda alias, URLs) | Same API code, different backends |
-| **Access logging** | Custom log format with $context vars | Detailed API analytics |
-| **Mutual TLS** | Client certificate authentication | B2B API security |
+| Feature                | What It Does                          | Why It Matters                                                             |
+| ---------------------- | ------------------------------------- | -------------------------------------------------------------------------- |
+| **$context variables** | Access request metadata in VTL/logs   | `$context.requestId` for tracing, `$context.identity.sourceIp` for logging |
+| **Gateway responses**  | Customize error formats globally      | Consistent error responses for 4xx/5xx                                     |
+| **Canary releases**    | % traffic routing to new deployment   | Safe rollouts                                                              |
+| **Mock integrations**  | Return hardcoded responses            | API-first development, testing                                             |
+| **VPC Links**          | Private integrations to NLB/ALB       | Access internal services                                                   |
+| **Stage variables**    | Per-stage config (Lambda alias, URLs) | Same API code, different backends                                          |
+| **Access logging**     | Custom log format with $context vars  | Detailed API analytics                                                     |
+| **Mutual TLS**         | Client certificate authentication     | B2B API security                                                           |
 
 ```ts
 // Custom access logging for API analytics
@@ -707,11 +741,11 @@ new cloudwatch.Alarm(this, "Api4xxAlarm", {
 
 **Key metrics to monitor:**
 
-| Metric | Healthy | Alert When |
-| --- | --- | --- |
-| `5XXError` | 0 | > 0 sustained |
-| `4XXError` | Low, stable | Sudden spike |
-| `Latency` (p99) | < 1s | > 3s |
-| `IntegrationLatency` | < 500ms | > 2s |
-| `Count` | Stable pattern | Unexpected drop or spike |
-| `CacheHitCount/CacheMissCount` | High hit ratio | Ratio drops below 50% |
+| Metric                         | Healthy        | Alert When               |
+| ------------------------------ | -------------- | ------------------------ |
+| `5XXError`                     | 0              | > 0 sustained            |
+| `4XXError`                     | Low, stable    | Sudden spike             |
+| `Latency` (p99)                | < 1s           | > 3s                     |
+| `IntegrationLatency`           | < 500ms        | > 2s                     |
+| `Count`                        | Stable pattern | Unexpected drop or spike |
+| `CacheHitCount/CacheMissCount` | High hit ratio | Ratio drops below 50%    |

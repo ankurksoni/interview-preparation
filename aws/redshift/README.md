@@ -489,7 +489,7 @@ const cluster = new redshift.Cluster(this, "DataWarehouse", {
   numberOfNodes: 2,
   defaultDatabaseName: "analytics",
   encrypted: true,
-  enhancedVpcRouting: true,      // All traffic through VPC (auditing)
+  enhancedVpcRouting: true, // All traffic through VPC (auditing)
   publiclyAccessible: false,
   preferredMaintenanceWindow: "sun:05:00-sun:06:00",
 });
@@ -505,9 +505,10 @@ const namespace = new redshift.CfnNamespace(this, "Namespace", {
 const workgroup = new redshift.CfnWorkgroup(this, "Workgroup", {
   workgroupName: "analytics",
   namespaceName: "analytics",
-  baseCapacity: 32,  // RPUs (8–512, in units of 8)
+  baseCapacity: 32, // RPUs (8–512, in units of 8)
   publiclyAccessible: false,
-  subnetIds: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_ISOLATED }).subnetIds,
+  subnetIds: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_ISOLATED })
+    .subnetIds,
 });
 ```
 
@@ -531,7 +532,7 @@ async function queryRedshift(sql: string): Promise<any[]> {
   // 1. Execute (async)
   const { Id } = await client.send(
     new ExecuteStatementCommand({
-      WorkgroupName: "analytics",       // Serverless
+      WorkgroupName: "analytics", // Serverless
       Database: "analytics",
       Sql: sql,
     }),
@@ -550,7 +551,10 @@ async function queryRedshift(sql: string): Promise<any[]> {
   const result = await client.send(new GetStatementResultCommand({ Id }));
   return result.Records!.map((row) =>
     Object.fromEntries(
-      row.map((col, i) => [result.ColumnMetadata![i].name, Object.values(col)[0]]),
+      row.map((col, i) => [
+        result.ColumnMetadata![i].name,
+        Object.values(col)[0],
+      ]),
     ),
   );
 }
@@ -570,15 +574,15 @@ const topCustomers = await queryRedshift(`
 
 **Answer:**
 
-| Criteria | Redshift Provisioned | Redshift Serverless | Athena |
-| --- | --- | --- | --- |
-| **Best for** | Predictable, heavy BI workloads | Variable analytics workloads | Ad-hoc queries on S3 |
-| **Pricing** | Per-node-hour | Per RPU-hour (idle = free) | Per TB scanned |
-| **Min cost** | ~$180/mo (dc2.large) | $0 when idle | $0 when idle |
-| **Concurrency** | 50+ with scaling | Auto-scales | 25 concurrent queries |
-| **Latency** | Sub-second (warm) | Seconds (cold start) | Seconds to minutes |
-| **Setup** | High (cluster config) | Medium | Zero |
-| **Complex joins** | Excellent | Excellent | Limited at scale |
+| Criteria          | Redshift Provisioned            | Redshift Serverless          | Athena                |
+| ----------------- | ------------------------------- | ---------------------------- | --------------------- |
+| **Best for**      | Predictable, heavy BI workloads | Variable analytics workloads | Ad-hoc queries on S3  |
+| **Pricing**       | Per-node-hour                   | Per RPU-hour (idle = free)   | Per TB scanned        |
+| **Min cost**      | ~$180/mo (dc2.large)            | $0 when idle                 | $0 when idle          |
+| **Concurrency**   | 50+ with scaling                | Auto-scales                  | 25 concurrent queries |
+| **Latency**       | Sub-second (warm)               | Seconds (cold start)         | Seconds to minutes    |
+| **Setup**         | High (cluster config)           | Medium                       | Zero                  |
+| **Complex joins** | Excellent                       | Excellent                    | Limited at scale      |
 
 ---
 
@@ -586,15 +590,15 @@ const topCustomers = await queryRedshift(`
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **Data Sharing** | Share live data across clusters without copying | Multi-team without ETL |
-| **AQUA** | Hardware-accelerated query processing | 10x faster for scan-heavy queries |
-| **Materialized views** | Auto-refresh precomputed results | Dashboard performance |
-| **Concurrency scaling** | Auto-add clusters for burst reads | No throttling during peak |
-| **Federated queries** | Query RDS/Aurora from Redshift SQL | Join transactional + analytics data |
-| **Streaming ingestion** | Ingest from Kinesis/MSK directly | Near-real-time analytics |
-| **Query monitoring rules** | Auto-kill expensive queries | Prevent runaway resources |
-| **Automatic table tuning** | Auto-selects distribution/sort keys | Optimization without manual effort |
+| Feature                    | What It Does                                    | Why It Matters                      |
+| -------------------------- | ----------------------------------------------- | ----------------------------------- |
+| **Data Sharing**           | Share live data across clusters without copying | Multi-team without ETL              |
+| **AQUA**                   | Hardware-accelerated query processing           | 10x faster for scan-heavy queries   |
+| **Materialized views**     | Auto-refresh precomputed results                | Dashboard performance               |
+| **Concurrency scaling**    | Auto-add clusters for burst reads               | No throttling during peak           |
+| **Federated queries**      | Query RDS/Aurora from Redshift SQL              | Join transactional + analytics data |
+| **Streaming ingestion**    | Ingest from Kinesis/MSK directly                | Near-real-time analytics            |
+| **Query monitoring rules** | Auto-kill expensive queries                     | Prevent runaway resources           |
+| **Automatic table tuning** | Auto-selects distribution/sort keys             | Optimization without manual effort  |
 
 > **Hidden Gem:** `AUTO` distribution style and sort key let Redshift automatically optimize data layout based on query patterns. Use them unless you have strong reasons for manual settings.

@@ -385,15 +385,15 @@ table.addGlobalSecondaryIndex({
 
 ### **Important DynamoDB Config Parameters for Pagination**
 
-| Parameter | Description | Recommendation |
-| --- | --- | --- |
-| `Limit` | Max items evaluated (before filter) | Set to page size × 2 to account for filtered items |
-| `ExclusiveStartKey` | Cursor for next page | Base64-encode for API responses (URL-safe) |
-| `ConsistentRead` | Strong consistency | Use only when stale data is unacceptable (2× RCU) |
-| `ScanIndexForward` | Sort direction (Query) | `false` for newest-first pagination |
-| `FilterExpression` | Post-read filtering | Avoid for pagination — use GSI design instead |
-| `ProjectionExpression` | Return specific attributes | Always set — reduces RCU and network I/O |
-| `ReturnConsumedCapacity` | Show RCU usage | Enable in prod to monitor query costs |
+| Parameter                | Description                         | Recommendation                                     |
+| ------------------------ | ----------------------------------- | -------------------------------------------------- |
+| `Limit`                  | Max items evaluated (before filter) | Set to page size × 2 to account for filtered items |
+| `ExclusiveStartKey`      | Cursor for next page                | Base64-encode for API responses (URL-safe)         |
+| `ConsistentRead`         | Strong consistency                  | Use only when stale data is unacceptable (2× RCU)  |
+| `ScanIndexForward`       | Sort direction (Query)              | `false` for newest-first pagination                |
+| `FilterExpression`       | Post-read filtering                 | Avoid for pagination — use GSI design instead      |
+| `ProjectionExpression`   | Return specific attributes          | Always set — reduces RCU and network I/O           |
+| `ReturnConsumedCapacity` | Show RCU usage                      | Enable in prod to monitor query costs              |
 
 > **Hidden Gem:** `ReturnConsumedCapacity: "INDEXES"` shows RCU consumed by each GSI lookup. Use this to find which queries are expensive and optimize GSI projections accordingly.
 

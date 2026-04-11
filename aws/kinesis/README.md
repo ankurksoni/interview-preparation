@@ -8,12 +8,12 @@ A curated list of **Amazon Kinesis interview questions** with practical, product
 
 **Answer:** Kinesis is a platform for **real-time streaming data** at any scale. It has four components:
 
-| Component | Purpose | Use Case |
-| --- | --- | --- |
-| **Kinesis Data Streams (KDS)** | Real-time data ingestion and processing | Custom consumers, sub-second processing |
-| **Kinesis Data Firehose** | Fully managed delivery to destinations | S3, Redshift, OpenSearch, HTTP endpoints |
-| **Kinesis Data Analytics** | SQL/Flink on streaming data | Real-time aggregations, anomaly detection |
-| **Kinesis Video Streams** | Ingest and process video streams | ML on video, live playback |
+| Component                      | Purpose                                 | Use Case                                  |
+| ------------------------------ | --------------------------------------- | ----------------------------------------- |
+| **Kinesis Data Streams (KDS)** | Real-time data ingestion and processing | Custom consumers, sub-second processing   |
+| **Kinesis Data Firehose**      | Fully managed delivery to destinations  | S3, Redshift, OpenSearch, HTTP endpoints  |
+| **Kinesis Data Analytics**     | SQL/Flink on streaming data             | Real-time aggregations, anomaly detection |
+| **Kinesis Video Streams**      | Ingest and process video streams        | ML on video, live playback                |
 
 ```ts
 import { KinesisClient, CreateStreamCommand } from "@aws-sdk/client-kinesis";
@@ -34,14 +34,14 @@ await kinesis.send(
 
 **Answer:**
 
-| Use Kinesis When | Don't Use Kinesis When |
-| --- | --- |
-| Real-time processing (sub-second) | Batch processing with hourly/daily jobs (use S3 + Glue) |
-| Event ordering matters (per-partition) | Simple fan-out messaging (use SNS) |
-| Multiple consumers need same data | Point-to-point messaging (use SQS) |
-| Replay/reprocess is required | Data doesn't need ordering or replay |
-| High-throughput streaming (millions of events/sec) | Low volume, intermittent events (use EventBridge) |
-| Log/metric aggregation pipeline | Simple event routing (use EventBridge) |
+| Use Kinesis When                                   | Don't Use Kinesis When                                  |
+| -------------------------------------------------- | ------------------------------------------------------- |
+| Real-time processing (sub-second)                  | Batch processing with hourly/daily jobs (use S3 + Glue) |
+| Event ordering matters (per-partition)             | Simple fan-out messaging (use SNS)                      |
+| Multiple consumers need same data                  | Point-to-point messaging (use SQS)                      |
+| Replay/reprocess is required                       | Data doesn't need ordering or replay                    |
+| High-throughput streaming (millions of events/sec) | Low volume, intermittent events (use EventBridge)       |
+| Log/metric aggregation pipeline                    | Simple event routing (use EventBridge)                  |
 
 > **System Design Tip:** Use **Kinesis Data Streams** when you need real-time processing with custom consumer logic. Use **Firehose** when you just need to deliver data to S3/Redshift/OpenSearch with minimal code.
 
@@ -62,12 +62,12 @@ Event routing with filtering? → EventBridge
 
 **Answer:** A shard is the **base throughput unit** of a Kinesis stream:
 
-| Metric | Per Shard |
-| --- | --- |
-| **Write** | 1 MB/s or 1,000 records/s |
-| **Read (shared)** | 2 MB/s across all consumers |
-| **Read (enhanced fan-out)** | 2 MB/s per consumer |
-| **Data retention** | 24 hours (default) up to 365 days |
+| Metric                      | Per Shard                         |
+| --------------------------- | --------------------------------- |
+| **Write**                   | 1 MB/s or 1,000 records/s         |
+| **Read (shared)**           | 2 MB/s across all consumers       |
+| **Read (enhanced fan-out)** | 2 MB/s per consumer               |
+| **Data retention**          | 24 hours (default) up to 365 days |
 
 **Shard calculation:**
 
@@ -97,7 +97,11 @@ await kinesis.send(
 **Answer:**
 
 ```ts
-import { KinesisClient, PutRecordCommand, PutRecordsCommand } from "@aws-sdk/client-kinesis";
+import {
+  KinesisClient,
+  PutRecordCommand,
+  PutRecordsCommand,
+} from "@aws-sdk/client-kinesis";
 
 const kinesis = new KinesisClient({});
 
@@ -126,8 +130,8 @@ for (let i = 0; i < records.length; i += 500) {
   // ❌ Bad: Ignoring FailedRecordCount
   // ✅ Good: Retry failed records with backoff
   if (result.FailedRecordCount && result.FailedRecordCount > 0) {
-    const failedRecords = result.Records!
-      .map((r, idx) => (r.ErrorCode ? batch[idx] : null))
+    const failedRecords = result
+      .Records!.map((r, idx) => (r.ErrorCode ? batch[idx] : null))
       .filter(Boolean);
     // Retry failedRecords with exponential backoff
   }
@@ -142,12 +146,12 @@ for (let i = 0; i < records.length; i += 500) {
 
 **Answer:**
 
-| Pattern | How It Works | Latency | Throughput | Cost |
-| --- | --- | --- | --- | --- |
-| **GetRecords (polling)** | Consumer polls shards via API | ~200ms–1s | 2 MB/s shared per shard | Lowest |
-| **KCL (Kinesis Client Library)** | Managed consumer with checkpointing | ~200ms | 2 MB/s shared per shard | Low |
-| **Enhanced Fan-Out (EFO)** | Push-based, dedicated throughput | ~70ms | 2 MB/s per consumer per shard | Higher |
-| **Lambda (event source)** | Lambda triggered per batch | ~1–5s | Configurable batch size | Pay per invoke |
+| Pattern                          | How It Works                        | Latency   | Throughput                    | Cost           |
+| -------------------------------- | ----------------------------------- | --------- | ----------------------------- | -------------- |
+| **GetRecords (polling)**         | Consumer polls shards via API       | ~200ms–1s | 2 MB/s shared per shard       | Lowest         |
+| **KCL (Kinesis Client Library)** | Managed consumer with checkpointing | ~200ms    | 2 MB/s shared per shard       | Low            |
+| **Enhanced Fan-Out (EFO)**       | Push-based, dedicated throughput    | ~70ms     | 2 MB/s per consumer per shard | Higher         |
+| **Lambda (event source)**        | Lambda triggered per batch          | ~1–5s     | Configurable batch size       | Pay per invoke |
 
 ```ts
 // CDK: Lambda consumer with Kinesis event source
@@ -165,12 +169,12 @@ processor.addEventSource(
   new eventsources.KinesisEventSource(stream, {
     startingPosition: lambda.StartingPosition.TRIM_HORIZON,
     batchSize: 100,
-    maxBatchingWindow: cdk.Duration.seconds(5),  // Wait up to 5s to fill batch
-    bisectBatchOnError: true,                     // Split batch on failure
+    maxBatchingWindow: cdk.Duration.seconds(5), // Wait up to 5s to fill batch
+    bisectBatchOnError: true, // Split batch on failure
     retryAttempts: 3,
-    parallelizationFactor: 10,                    // 10 concurrent batches per shard
+    parallelizationFactor: 10, // 10 concurrent batches per shard
     onFailure: new eventsources.SqsDestination(dlq),
-    reportBatchItemFailures: true,                // Partial batch failure reporting
+    reportBatchItemFailures: true, // Partial batch failure reporting
   }),
 );
 ```
@@ -213,14 +217,14 @@ export const handler = async (
 
 **Answer:**
 
-| Parameter | Description | Production Recommendation |
-| --- | --- | --- |
-| `ShardCount` | Number of shards (throughput units) | Over-provision 20–30% for bursts |
-| `RetentionPeriodHours` | How long data stays (24h–8760h) | 24h for real-time; 168h if replay needed |
-| `StreamModeDetails` | ON_DEMAND or PROVISIONED | ON_DEMAND for unpredictable traffic |
-| `PartitionKey` | Determines shard routing | High-cardinality key (userId, sessionId) |
-| `EnhancedMonitoring` | Per-shard CloudWatch metrics | Enable for production troubleshooting |
-| `EncryptionType` | KMS encryption at rest | Always use KMS in production |
+| Parameter              | Description                         | Production Recommendation                |
+| ---------------------- | ----------------------------------- | ---------------------------------------- |
+| `ShardCount`           | Number of shards (throughput units) | Over-provision 20–30% for bursts         |
+| `RetentionPeriodHours` | How long data stays (24h–8760h)     | 24h for real-time; 168h if replay needed |
+| `StreamModeDetails`    | ON_DEMAND or PROVISIONED            | ON_DEMAND for unpredictable traffic      |
+| `PartitionKey`         | Determines shard routing            | High-cardinality key (userId, sessionId) |
+| `EnhancedMonitoring`   | Per-shard CloudWatch metrics        | Enable for production troubleshooting    |
+| `EncryptionType`       | KMS encryption at rest              | Always use KMS in production             |
 
 ```ts
 // CDK: Production-ready Kinesis stream
@@ -228,8 +232,8 @@ import * as kinesis from "aws-cdk-lib/aws-kinesis";
 
 const stream = new kinesis.Stream(this, "EventStream", {
   streamName: "order-events",
-  streamMode: kinesis.StreamMode.ON_DEMAND,  // Auto-scales shards
-  retentionPeriod: cdk.Duration.hours(168),  // 7 days for replay
+  streamMode: kinesis.StreamMode.ON_DEMAND, // Auto-scales shards
+  retentionPeriod: cdk.Duration.hours(168), // 7 days for replay
   encryption: kinesis.StreamEncryption.KMS,
 });
 
@@ -259,17 +263,20 @@ const deliveryStream = new firehose.CfnDeliveryStream(this, "LogDelivery", {
   extendedS3DestinationConfiguration: {
     bucketArn: dataBucket.bucketArn,
     roleArn: firehoseRole.roleArn,
-    prefix: "logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/",
+    prefix:
+      "logs/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/",
     errorOutputPrefix: "errors/",
     bufferingHints: {
-      sizeInMBs: 128,         // Buffer up to 128 MB
-      intervalInSeconds: 300,  // Or flush every 5 minutes
+      sizeInMBs: 128, // Buffer up to 128 MB
+      intervalInSeconds: 300, // Or flush every 5 minutes
     },
     compressionFormat: "GZIP",
     dataFormatConversionConfiguration: {
       enabled: true,
       inputFormatConfiguration: { deserializer: { openXJsonSerDe: {} } },
-      outputFormatConfiguration: { serializer: { parquetSerDe: { compression: "SNAPPY" } } },
+      outputFormatConfiguration: {
+        serializer: { parquetSerDe: { compression: "SNAPPY" } },
+      },
       schemaConfiguration: {
         databaseName: "analytics",
         tableName: "logs",
@@ -282,14 +289,14 @@ const deliveryStream = new firehose.CfnDeliveryStream(this, "LogDelivery", {
 
 **Firehose vs Data Streams:**
 
-| Feature | Firehose | Data Streams |
-| --- | --- | --- |
-| Management | Fully managed | You manage consumers |
-| Latency | 60s–900s buffer | Sub-second |
-| Destinations | S3, Redshift, OpenSearch, HTTP | Anything (custom consumer) |
-| Transformation | Lambda (optional) | Full custom processing |
-| Scaling | Automatic | Manual (PROVISIONED) or ON_DEMAND |
-| Cost | Per GB ingested | Per shard-hour + per GB |
+| Feature        | Firehose                       | Data Streams                      |
+| -------------- | ------------------------------ | --------------------------------- |
+| Management     | Fully managed                  | You manage consumers              |
+| Latency        | 60s–900s buffer                | Sub-second                        |
+| Destinations   | S3, Redshift, OpenSearch, HTTP | Anything (custom consumer)        |
+| Transformation | Lambda (optional)              | Full custom processing            |
+| Scaling        | Automatic                      | Manual (PROVISIONED) or ON_DEMAND |
+| Cost           | Per GB ingested                | Per shard-hour + per GB           |
 
 ---
 
@@ -297,22 +304,22 @@ const deliveryStream = new firehose.CfnDeliveryStream(this, "LogDelivery", {
 
 **Answer:**
 
-| Concern | Solution |
-| --- | --- |
-| Producer failures | Retry with `PutRecords` + backoff on `FailedRecordCount` |
-| Consumer failures | KCL checkpointing; Lambda `bisectBatchOnError` |
-| Hot shards | Use high-cardinality partition keys; add random suffix |
-| Data loss | Multi-AZ replication (built-in); extend retention period |
-| Consumer lag | Monitor `IteratorAge` metric; scale consumers |
-| Poison records | `bisectBatchOnError` + DLQ for failed records |
-| Shard split during processing | KCL handles shard lineage automatically |
+| Concern                       | Solution                                                 |
+| ----------------------------- | -------------------------------------------------------- |
+| Producer failures             | Retry with `PutRecords` + backoff on `FailedRecordCount` |
+| Consumer failures             | KCL checkpointing; Lambda `bisectBatchOnError`           |
+| Hot shards                    | Use high-cardinality partition keys; add random suffix   |
+| Data loss                     | Multi-AZ replication (built-in); extend retention period |
+| Consumer lag                  | Monitor `IteratorAge` metric; scale consumers            |
+| Poison records                | `bisectBatchOnError` + DLQ for failed records            |
+| Shard split during processing | KCL handles shard lineage automatically                  |
 
 ```ts
 // ❌ Bad: Single low-cardinality partition key → hot shard
 await kinesis.send(
   new PutRecordCommand({
     StreamName: "events",
-    PartitionKey: "US",  // All US traffic on one shard
+    PartitionKey: "US", // All US traffic on one shard
     Data: Buffer.from(payload),
   }),
 );
@@ -339,7 +346,7 @@ new cloudwatch.Alarm(this, "ConsumerLagAlarm", {
     statistic: "Maximum",
     period: cdk.Duration.minutes(1),
   }),
-  threshold: 60_000,  // Alert if consumer is 60s behind
+  threshold: 60_000, // Alert if consumer is 60s behind
   evaluationPeriods: 3,
   alarmDescription: "Kinesis consumer falling behind",
 });
@@ -373,12 +380,12 @@ With EFO (dedicated):  Shard → Consumer A: 2 MB/s
 
 **When to use EFO:**
 
-| Use EFO | Skip EFO |
-| --- | --- |
-| 3+ consumers on same stream | 1–2 consumers |
-| Sub-100ms latency required | Seconds of latency acceptable |
-| Consumers can't keep up (lag) | Consumers easily keep pace |
-| Budget allows ($0.015/shard-hour/consumer) | Cost-sensitive workload |
+| Use EFO                                    | Skip EFO                      |
+| ------------------------------------------ | ----------------------------- |
+| 3+ consumers on same stream                | 1–2 consumers                 |
+| Sub-100ms latency required                 | Seconds of latency acceptable |
+| Consumers can't keep up (lag)              | Consumers easily keep pace    |
+| Budget allows ($0.015/shard-hour/consumer) | Cost-sensitive workload       |
 
 ```ts
 import {
@@ -401,27 +408,27 @@ await kinesis.send(
 
 **Answer:**
 
-| Strategy | How | Impact |
-| --- | --- | --- |
-| Use ON_DEMAND mode | Auto-scales, pay for actual use | Best for variable traffic |
-| Batch with PutRecords | Up to 500 records per call | Reduces API calls |
-| Use Firehose for S3 delivery | No shard management overhead | Simpler + often cheaper |
-| Minimize retention period | 24h vs 168h vs 365 days | 24h is cheapest |
-| Avoid Enhanced Fan-Out unless needed | EFO adds per-consumer cost | Save $0.015/shard-hour/consumer |
-| Right-size shards (PROVISIONED) | Monitor `IncomingBytes` metric | Avoid paying for idle shards |
-| Aggregate records client-side | Kinesis Producer Library (KPL) aggregation | More records per PUT |
+| Strategy                             | How                                        | Impact                          |
+| ------------------------------------ | ------------------------------------------ | ------------------------------- |
+| Use ON_DEMAND mode                   | Auto-scales, pay for actual use            | Best for variable traffic       |
+| Batch with PutRecords                | Up to 500 records per call                 | Reduces API calls               |
+| Use Firehose for S3 delivery         | No shard management overhead               | Simpler + often cheaper         |
+| Minimize retention period            | 24h vs 168h vs 365 days                    | 24h is cheapest                 |
+| Avoid Enhanced Fan-Out unless needed | EFO adds per-consumer cost                 | Save $0.015/shard-hour/consumer |
+| Right-size shards (PROVISIONED)      | Monitor `IncomingBytes` metric             | Avoid paying for idle shards    |
+| Aggregate records client-side        | Kinesis Producer Library (KPL) aggregation | More records per PUT            |
 
 **Cost comparison (us-east-1):**
 
-| Component | Cost |
-| --- | --- |
-| Shard-hour (PROVISIONED) | $0.015/hr ($10.80/month) |
-| ON_DEMAND write | $0.08 per GB |
-| ON_DEMAND read | $0.04 per GB |
-| PUT payload unit (25KB) | $0.014 per million |
-| Extended retention (>24h) | $0.023 per shard-hour |
-| Long-term retention (>7d) | $0.013 per GB/month |
-| Enhanced Fan-Out | $0.015/shard-hour + $0.013 per GB |
+| Component                 | Cost                              |
+| ------------------------- | --------------------------------- |
+| Shard-hour (PROVISIONED)  | $0.015/hr ($10.80/month)          |
+| ON_DEMAND write           | $0.08 per GB                      |
+| ON_DEMAND read            | $0.04 per GB                      |
+| PUT payload unit (25KB)   | $0.014 per million                |
+| Extended retention (>24h) | $0.023 per shard-hour             |
+| Long-term retention (>7d) | $0.013 per GB/month               |
+| Enhanced Fan-Out          | $0.015/shard-hour + $0.013 per GB |
 
 ---
 
@@ -476,15 +483,15 @@ export const handler = async (event: KinesisStreamEvent) => {
 
 **Answer:**
 
-| Feature | What It Does | Why It Matters |
-| --- | --- | --- |
-| **Server-side timestamps** | `ApproximateArrivalTimestamp` on each record | Debug latency, order by ingestion time |
-| **KPL aggregation** | Pack multiple user records into one Kinesis record | 10x+ throughput, lower costs |
-| **Shard-level metrics** | Per-shard CloudWatch metrics via Enhanced Monitoring | Identify hot shards by name |
-| **ON_DEMAND auto-scaling** | Scales to 200 MB/s write without config | Zero capacity planning |
-| **SubscribeToShard** | HTTP/2 push for sub-70ms latency | Real-time dashboards |
-| **Cross-account access** | Resource-based policy on stream | Central data lake ingestion |
-| **ListShards pagination** | Get shard map with filters | Identify shard lineage after splits |
+| Feature                    | What It Does                                         | Why It Matters                         |
+| -------------------------- | ---------------------------------------------------- | -------------------------------------- |
+| **Server-side timestamps** | `ApproximateArrivalTimestamp` on each record         | Debug latency, order by ingestion time |
+| **KPL aggregation**        | Pack multiple user records into one Kinesis record   | 10x+ throughput, lower costs           |
+| **Shard-level metrics**    | Per-shard CloudWatch metrics via Enhanced Monitoring | Identify hot shards by name            |
+| **ON_DEMAND auto-scaling** | Scales to 200 MB/s write without config              | Zero capacity planning                 |
+| **SubscribeToShard**       | HTTP/2 push for sub-70ms latency                     | Real-time dashboards                   |
+| **Cross-account access**   | Resource-based policy on stream                      | Central data lake ingestion            |
+| **ListShards pagination**  | Get shard map with filters                           | Identify shard lineage after splits    |
 
 > **Hidden Gem:** `ApproximateArrivalTimestamp` is set server-side when Kinesis receives the record. Use it (not client timestamps) for reliable latency calculations and event ordering.
 
@@ -541,7 +548,8 @@ new firehose.CfnDeliveryStream(this, "Archive", {
   extendedS3DestinationConfiguration: {
     bucketArn: archiveBucket.bucketArn,
     roleArn: firehoseRole.roleArn,
-    prefix: "events/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/",
+    prefix:
+      "events/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/hour=!{timestamp:HH}/",
     bufferingHints: { sizeInMBs: 128, intervalInSeconds: 300 },
     compressionFormat: "GZIP",
   },
@@ -554,15 +562,15 @@ new firehose.CfnDeliveryStream(this, "Archive", {
 
 **Answer:**
 
-| Limit | Value | Workaround |
-| --- | --- | --- |
-| Shards per stream (PROVISIONED) | 500 (soft limit, can increase) | Request limit increase |
-| ON_DEMAND write throughput | 200 MB/s (auto) | Request limit increase |
-| Record size | 1 MB | Compress or use S3 reference |
-| PutRecords batch size | 500 records / 5 MB | Split into multiple calls |
-| Consumers per stream (EFO) | 20 | Use shared consumers for low-priority |
-| Lambda parallelization | 10 per shard | Use more shards for higher parallelism |
-| Data retention | 24h–365 days | Export to S3 for permanent storage |
-| GetRecords per shard | 5 calls/sec | Use EFO for high-read scenarios |
+| Limit                           | Value                          | Workaround                             |
+| ------------------------------- | ------------------------------ | -------------------------------------- |
+| Shards per stream (PROVISIONED) | 500 (soft limit, can increase) | Request limit increase                 |
+| ON_DEMAND write throughput      | 200 MB/s (auto)                | Request limit increase                 |
+| Record size                     | 1 MB                           | Compress or use S3 reference           |
+| PutRecords batch size           | 500 records / 5 MB             | Split into multiple calls              |
+| Consumers per stream (EFO)      | 20                             | Use shared consumers for low-priority  |
+| Lambda parallelization          | 10 per shard                   | Use more shards for higher parallelism |
+| Data retention                  | 24h–365 days                   | Export to S3 for permanent storage     |
+| GetRecords per shard            | 5 calls/sec                    | Use EFO for high-read scenarios        |
 
 > **Production Tip:** When hitting `ReadProvisionedThroughputExceeded`, either add EFO for the bottleneck consumer, or increase shard count. Don't just add retry — fix the root cause.
