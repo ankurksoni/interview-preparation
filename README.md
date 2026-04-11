@@ -37,6 +37,10 @@ A curated collection of interview preparation material covering popular programm
 - [Amazon Redshift](./aws/redshift/README.md) — Architecture, Distribution Keys, Spectrum, Data Sharing, Zero-ETL
 - [Amazon SNS](./aws/sns/README.md) — Pub/Sub, Fan-out, Filtering, FIFO Topics, Mobile Push, Delivery
 - [Amazon SQS](./aws/sqs/README.md) — Queues, Visibility Timeout, DLQ, Long Polling, Lambda Integration
+- [Amazon Athena](./aws/athena/README.md) — Serverless SQL, Partitioning, Parquet, Cost Control, Glue Catalog, Federated Queries
+- [Amazon Kinesis](./aws/kinesis/README.md) — Data Streams, Firehose, Shards, EFO, Lambda Consumers, Real-Time Pipelines
+- [Amazon OpenSearch](./aws/opensearch/README.md) — Full-Text Search, Cluster Sizing, ISM, Autocomplete, DynamoDB Integration
+- [Amazon API Gateway](./aws/api-gateway/README.md) — REST vs HTTP vs WebSocket, Caching, Auth, Throttling, CDK Patterns
 - [CloudFormation & CDK](./aws/cloudformation-cdk/README.md) — IaC, Stacks, Constructs, Pipelines, Testing, Deployment Patterns
 
 ## 📂 OWASP Top 10
