@@ -465,3 +465,136 @@ WHERE created_at >= CURRENT_DATE - INTERVAL '1 day';
 - Compress data (Redshift auto-selects compression)
 - Partition Spectrum data for minimal scanning
 - Use materialized views to avoid re-computing heavy queries
+
+---
+
+## Practical System Design Supplement
+
+---
+
+### 21. **How do you provision a Redshift cluster with CDK?**
+
+**Answer:**
+
+```ts
+import * as redshift from "aws-cdk-lib/aws-redshift";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
+
+// Provisioned cluster
+const cluster = new redshift.Cluster(this, "DataWarehouse", {
+  masterUser: { masterUsername: "admin" },
+  vpc,
+  vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+  nodeType: redshift.NodeType.RA3_XLPLUS,
+  numberOfNodes: 2,
+  defaultDatabaseName: "analytics",
+  encrypted: true,
+  enhancedVpcRouting: true,      // All traffic through VPC (auditing)
+  publiclyAccessible: false,
+  preferredMaintenanceWindow: "sun:05:00-sun:06:00",
+});
+
+// For serverless (via CfnWorkgroup):
+const namespace = new redshift.CfnNamespace(this, "Namespace", {
+  namespaceName: "analytics",
+  adminUsername: "admin",
+  adminUserPassword: secretValue,
+  dbName: "analytics",
+});
+
+const workgroup = new redshift.CfnWorkgroup(this, "Workgroup", {
+  workgroupName: "analytics",
+  namespaceName: "analytics",
+  baseCapacity: 32,  // RPUs (8–512, in units of 8)
+  publiclyAccessible: false,
+  subnetIds: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_ISOLATED }).subnetIds,
+});
+```
+
+---
+
+### 22. **How do you query Redshift from TypeScript?**
+
+**Answer:**
+
+```ts
+import {
+  RedshiftDataClient,
+  ExecuteStatementCommand,
+  DescribeStatementCommand,
+  GetStatementResultCommand,
+} from "@aws-sdk/client-redshift-data";
+
+const client = new RedshiftDataClient({});
+
+async function queryRedshift(sql: string): Promise<any[]> {
+  // 1. Execute (async)
+  const { Id } = await client.send(
+    new ExecuteStatementCommand({
+      WorkgroupName: "analytics",       // Serverless
+      Database: "analytics",
+      Sql: sql,
+    }),
+  );
+
+  // 2. Poll for completion
+  let status = "SUBMITTED";
+  while (["SUBMITTED", "PICKED", "STARTED"].includes(status)) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const desc = await client.send(new DescribeStatementCommand({ Id }));
+    status = desc.Status!;
+    if (status === "FAILED") throw new Error(desc.Error);
+  }
+
+  // 3. Fetch results
+  const result = await client.send(new GetStatementResultCommand({ Id }));
+  return result.Records!.map((row) =>
+    Object.fromEntries(
+      row.map((col, i) => [result.ColumnMetadata![i].name, Object.values(col)[0]]),
+    ),
+  );
+}
+
+const topCustomers = await queryRedshift(`
+  SELECT customer_id, SUM(amount) as total_spend
+  FROM orders WHERE order_date >= DATEADD(month, -3, GETDATE())
+  GROUP BY customer_id ORDER BY total_spend DESC LIMIT 10
+`);
+```
+
+> **Hidden Gem:** The Redshift Data API is serverless and doesn't require a persistent connection or VPC access. Use it from Lambda instead of maintaining connection pools.
+
+---
+
+### 23. **When should you use Redshift vs Redshift Serverless vs Athena?**
+
+**Answer:**
+
+| Criteria | Redshift Provisioned | Redshift Serverless | Athena |
+| --- | --- | --- | --- |
+| **Best for** | Predictable, heavy BI workloads | Variable analytics workloads | Ad-hoc queries on S3 |
+| **Pricing** | Per-node-hour | Per RPU-hour (idle = free) | Per TB scanned |
+| **Min cost** | ~$180/mo (dc2.large) | $0 when idle | $0 when idle |
+| **Concurrency** | 50+ with scaling | Auto-scales | 25 concurrent queries |
+| **Latency** | Sub-second (warm) | Seconds (cold start) | Seconds to minutes |
+| **Setup** | High (cluster config) | Medium | Zero |
+| **Complex joins** | Excellent | Excellent | Limited at scale |
+
+---
+
+### 24. **What are Redshift's hidden/useful features for production?**
+
+**Answer:**
+
+| Feature | What It Does | Why It Matters |
+| --- | --- | --- |
+| **Data Sharing** | Share live data across clusters without copying | Multi-team without ETL |
+| **AQUA** | Hardware-accelerated query processing | 10x faster for scan-heavy queries |
+| **Materialized views** | Auto-refresh precomputed results | Dashboard performance |
+| **Concurrency scaling** | Auto-add clusters for burst reads | No throttling during peak |
+| **Federated queries** | Query RDS/Aurora from Redshift SQL | Join transactional + analytics data |
+| **Streaming ingestion** | Ingest from Kinesis/MSK directly | Near-real-time analytics |
+| **Query monitoring rules** | Auto-kill expensive queries | Prevent runaway resources |
+| **Automatic table tuning** | Auto-selects distribution/sort keys | Optimization without manual effort |
+
+> **Hidden Gem:** `AUTO` distribution style and sort key let Redshift automatically optimize data layout based on query patterns. Use them unless you have strong reasons for manual settings.

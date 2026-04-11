@@ -349,3 +349,95 @@ async function paginateWithFailover(params) {
   throw new Error("All regions unavailable");
 }
 ```
+
+---
+
+## Practical System Design Supplement
+
+---
+
+### **CDK: Production DynamoDB Table with Pagination-Friendly Design**
+
+```ts
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+
+const table = new dynamodb.Table(this, "OrdersTable", {
+  tableName: "orders",
+  partitionKey: { name: "pk", type: dynamodb.AttributeType.STRING },
+  sortKey: { name: "sk", type: dynamodb.AttributeType.STRING },
+  billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+  pointInTimeRecovery: true,
+  stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+  removalPolicy: cdk.RemovalPolicy.RETAIN,
+});
+
+// GSI for pagination by date
+table.addGlobalSecondaryIndex({
+  indexName: "gsi-status-date",
+  partitionKey: { name: "status", type: dynamodb.AttributeType.STRING },
+  sortKey: { name: "createdAt", type: dynamodb.AttributeType.STRING },
+  projectionType: dynamodb.ProjectionType.INCLUDE,
+  nonKeyAttributes: ["orderId", "amount", "customerId"],
+});
+```
+
+---
+
+### **Important DynamoDB Config Parameters for Pagination**
+
+| Parameter | Description | Recommendation |
+| --- | --- | --- |
+| `Limit` | Max items evaluated (before filter) | Set to page size × 2 to account for filtered items |
+| `ExclusiveStartKey` | Cursor for next page | Base64-encode for API responses (URL-safe) |
+| `ConsistentRead` | Strong consistency | Use only when stale data is unacceptable (2× RCU) |
+| `ScanIndexForward` | Sort direction (Query) | `false` for newest-first pagination |
+| `FilterExpression` | Post-read filtering | Avoid for pagination — use GSI design instead |
+| `ProjectionExpression` | Return specific attributes | Always set — reduces RCU and network I/O |
+| `ReturnConsumedCapacity` | Show RCU usage | Enable in prod to monitor query costs |
+
+> **Hidden Gem:** `ReturnConsumedCapacity: "INDEXES"` shows RCU consumed by each GSI lookup. Use this to find which queries are expensive and optimize GSI projections accordingly.
+
+---
+
+### **DynamoDB Batch Operations with Pagination**
+
+```ts
+import { DynamoDBClient, BatchGetItemCommand } from "@aws-sdk/client-dynamodb";
+import { unmarshall, marshall } from "@aws-sdk/util-dynamodb";
+
+const client = new DynamoDBClient({});
+
+// BatchGetItem with automatic unprocessed retry
+async function batchGet(keys: Record<string, any>[]): Promise<any[]> {
+  const results: any[] = [];
+  let unprocessed = keys;
+
+  while (unprocessed.length > 0) {
+    const batch = unprocessed.slice(0, 100); // Max 100 items per batch
+    unprocessed = unprocessed.slice(100);
+
+    const resp = await client.send(
+      new BatchGetItemCommand({
+        RequestItems: {
+          orders: { Keys: batch.map((k) => marshall(k)) },
+        },
+      }),
+    );
+
+    results.push(
+      ...(resp.Responses?.orders?.map((item) => unmarshall(item)) ?? []),
+    );
+
+    // Retry unprocessed keys (throttled)
+    const retryKeys = resp.UnprocessedKeys?.orders?.Keys;
+    if (retryKeys?.length) {
+      unprocessed.push(...retryKeys.map((k) => unmarshall(k)));
+      await new Promise((r) => setTimeout(r, 1000)); // Backoff
+    }
+  }
+
+  return results;
+}
+```
+
+> **Production Tip:** Always handle `UnprocessedKeys` in batch operations. DynamoDB returns them when throughput is exceeded — ignoring them means silently dropping data.

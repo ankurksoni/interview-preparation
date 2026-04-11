@@ -361,3 +361,206 @@ Choose Lambda for short-lived, event-driven tasks. Fargate for containerized wor
 ### 50. **Explain the lifecycle of a Lambda function in detail.**
 
 **Answer:** Lifecycle has **Init** (cold start – run once), **Invoke** (request handling), and **Shutdown** (cleanup). Init is reused with provisioned concurrency. State outside handler persists within same container.
+
+---
+
+## Practical System Design Supplement
+
+---
+
+### 51. **How do you deploy a Lambda function with CDK (production-grade)?**
+
+**Answer:**
+
+```ts
+import * as cdk from "aws-cdk-lib";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
+import * as sqs from "aws-cdk-lib/aws-sqs";
+
+const dlq = new sqs.Queue(this, "DLQ", {
+  retentionPeriod: cdk.Duration.days(14),
+});
+
+const fn = new lambda.Function(this, "OrderProcessor", {
+  runtime: lambda.Runtime.NODEJS_20_X,
+  handler: "index.handler",
+  code: lambda.Code.fromAsset("lambda/order-processor"),
+  memorySize: 512,
+  timeout: cdk.Duration.seconds(30),
+  architecture: lambda.Architecture.ARM_64,    // 20% cheaper than x86
+  environment: {
+    TABLE_NAME: table.tableName,
+    POWERTOOLS_SERVICE_NAME: "order-service",
+    LOG_LEVEL: "INFO",
+  },
+  tracing: lambda.Tracing.ACTIVE,              // X-Ray
+  insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_229_0,
+  logRetention: logs.RetentionDays.ONE_MONTH,
+  deadLetterQueue: dlq,                        // DLQ for async invocations
+  retryAttempts: 2,
+  reservedConcurrentExecutions: 100,           // Protect downstream services
+});
+
+// Provisioned concurrency via alias (for latency-critical paths)
+const alias = new lambda.Alias(this, "ProdAlias", {
+  aliasName: "prod",
+  version: fn.currentVersion,
+  provisionedConcurrentExecutions: 5,
+});
+
+// Auto-scaling provisioned concurrency
+const scaling = alias.addAutoScaling({ maxCapacity: 50, minCapacity: 5 });
+scaling.scaleOnUtilization({ utilizationTarget: 0.7 });
+
+// Grant least-privilege access
+table.grantReadWriteData(fn);
+```
+
+---
+
+### 52. **How do you invoke Lambda programmatically from TypeScript?**
+
+**Answer:**
+
+```ts
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+
+const lambda = new LambdaClient({});
+
+// Synchronous invocation (wait for response)
+const syncResult = await lambda.send(
+  new InvokeCommand({
+    FunctionName: "order-processor",
+    InvocationType: "RequestResponse",
+    Payload: Buffer.from(JSON.stringify({ orderId: "ord-123" })),
+  }),
+);
+const response = JSON.parse(Buffer.from(syncResult.Payload!).toString());
+
+// Asynchronous invocation (fire-and-forget)
+await lambda.send(
+  new InvokeCommand({
+    FunctionName: "email-sender",
+    InvocationType: "Event", // Returns 202 immediately
+    Payload: Buffer.from(JSON.stringify({ to: "user@example.com" })),
+  }),
+);
+```
+
+> **Production Tip:** Use `Event` invocation type for non-critical tasks. Lambda auto-retries twice and sends failures to DLQ. This decouples the caller from processing time.
+
+---
+
+### 53. **What are Lambda's key cost optimization strategies?**
+
+**Answer:**
+
+| Strategy | Savings | Effort |
+| --- | --- | --- |
+| ARM64 (Graviton) architecture | 20% cheaper, 34% better perf | Low (set `architecture`) |
+| Right-size memory (use Power Tuning) | 10–50% | Medium |
+| Minimize cold starts (small bundles, lazy init) | Reduces billed init time | Medium |
+| Use provisioned concurrency only where needed | Avoid paying for idle concurrency | Low |
+| Batch processing (SQS, Kinesis) | Fewer invocations | Low |
+| Avoid VPC unless required | Eliminates ENI cold start overhead | Low |
+| Use Lambda Layers for shared deps | Smaller deployment, faster deploys | Medium |
+
+```ts
+// ❌ Bad: 1024 MB for a simple API handler
+new lambda.Function(this, "Simple", { memorySize: 1024 });
+
+// ✅ Good: Use AWS Lambda Power Tuning to find optimal
+// Usually 256–512 MB for API handlers, 128 MB for simple transforms
+new lambda.Function(this, "Optimized", {
+  memorySize: 256,
+  architecture: lambda.Architecture.ARM_64,
+});
+```
+
+**Cost estimate (us-east-1):**
+
+| Memory | Duration | Invocations/month | Monthly Cost |
+| --- | --- | --- | --- |
+| 128 MB | 100ms | 1M | ~$0.21 |
+| 256 MB | 100ms | 1M | ~$0.42 |
+| 512 MB | 200ms | 10M | ~$16.70 |
+| 1024 MB | 500ms | 10M | ~$83.40 |
+
+---
+
+### 54. **What hidden/lesser-known Lambda features are useful?**
+
+**Answer:**
+
+| Feature | What It Does | Why It Matters |
+| --- | --- | --- |
+| **Response streaming** | Stream response progressively | Long responses without timeout |
+| **SnapStart** | Snapshot init phase (Java) | Near-zero cold starts for Java |
+| **Function URLs** | Built-in HTTPS endpoint | Skip API Gateway for simple use cases |
+| **Recursive loop detection** | Auto-detects Lambda→SQS→Lambda loops | Prevents infinite invocation costs |
+| **`/tmp` storage** | 512 MB–10 GB ephemeral storage | Cache files between invocations (same container) |
+| **Provisioned concurrency auto-scaling** | Scale warm instances by schedule/utilization | Match traffic patterns without over-provisioning |
+| **Lambda Insights** | Enhanced monitoring (memory, CPU, network) | Find memory leaks, optimize sizing |
+| **Event filtering** | Filter at event source level | Reduce invocations for SQS/Kinesis/DynamoDB triggers |
+
+```ts
+// Event source filtering: Only invoke Lambda for specific events
+import * as eventsources from "aws-cdk-lib/aws-lambda-event-sources";
+
+fn.addEventSource(
+  new eventsources.SqsEventSource(queue, {
+    batchSize: 10,
+    filters: [
+      lambda.FilterCriteria.filter({
+        body: {
+          eventType: lambda.FilterRule.isEqual("ORDER_CREATED"),
+          amount: lambda.FilterRule.between(100, 10000),
+        },
+      }),
+    ],
+  }),
+);
+
+// Function URL (skip API Gateway for internal/simple endpoints)
+const fnUrl = fn.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.AWS_IAM,
+  cors: {
+    allowedOrigins: ["https://myapp.com"],
+    allowedMethods: [lambda.HttpMethod.GET, lambda.HttpMethod.POST],
+  },
+});
+```
+
+---
+
+### 55. **What are Lambda's resiliency and scalability patterns?**
+
+**Answer:**
+
+| Concern | Solution |
+| --- | --- |
+| Cold start latency | Provisioned concurrency + ARM64 + small bundles |
+| Downstream overload | Reserved concurrency to cap parallel invocations |
+| Transient failures | Built-in retries (async: 2, stream: configurable) |
+| Poison messages | DLQ (async) or `bisectBatchOnError` (streams) |
+| Timeout | Set timeout < downstream timeout; use heartbeats |
+| Region failure | Multi-region with Route 53 health checks |
+| Throttling | Reserved concurrency + SQS buffer |
+| Memory leaks | Monitor with Lambda Insights; container reuse is time-boxed |
+
+```ts
+// CDK: Lambda with SQS buffer for resiliency
+const buffer = new sqs.Queue(this, "Buffer", {
+  visibilityTimeout: cdk.Duration.minutes(6), // 6× Lambda timeout
+  deadLetterQueue: { queue: dlq, maxReceiveCount: 3 },
+});
+
+fn.addEventSource(
+  new eventsources.SqsEventSource(buffer, {
+    batchSize: 10,
+    maxBatchingWindow: cdk.Duration.seconds(5),
+    reportBatchItemFailures: true,
+  }),
+);
+```

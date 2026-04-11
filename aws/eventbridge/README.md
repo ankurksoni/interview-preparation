@@ -583,3 +583,93 @@ export const handler = async (event: any) => {
   await processOrder(detail.orderId, amount);
 };
 ```
+
+---
+
+## Practical System Design Supplement
+
+---
+
+### 21. **What are EventBridge's cost considerations?**
+
+**Answer:**
+
+| Component | Cost (us-east-1) |
+| --- | --- |
+| Custom events published | $1.00 per million events |
+| Default bus (AWS service events) | Free |
+| Third-party events (SaaS) | $1.00 per million |
+| Archive & replay | $0.023 per GB stored |
+| Schema discovery | Free |
+| Pipes (filtering, enrichment) | $0.40 per million invocations |
+| Scheduler | Free (first 14M), $1.00/M after |
+| Cross-region event bus | $1.00/M + data transfer |
+
+**Cost optimization tips:**
+
+| Strategy | Savings |
+| --- | --- |
+| Use filter patterns on rules | Reduce target invocations (free filtering) |
+| Batch events into fewer PutEvents calls | Up to 10 entries/call |
+| Use Scheduler instead of CloudWatch Events for cron | Free tier is generous |
+| Avoid archiving all events | Archive only what you'd replay |
+| Use default bus for AWS events | Free vs custom bus |
+
+> **Production Tip:** EventBridge filtering is free — filter at the rule level instead of invoking Lambda to filter. Every Lambda invocation you avoid saves money.
+
+---
+
+### 22. **What are EventBridge Pipes and when to use them?**
+
+**Answer:** Pipes connect sources to targets with optional filtering, enrichment, and transformation — without writing Lambda glue code.
+
+```
+Source (SQS/Kinesis/DynamoDB) → Filter → Enrich (Lambda/API GW/Step Functions) → Target
+```
+
+```ts
+import * as pipes from "aws-cdk-lib/aws-pipes";
+
+new pipes.CfnPipe(this, "OrderPipe", {
+  name: "order-processing-pipe",
+  source: queue.queueArn,
+  sourceParameters: {
+    sqsQueueParameters: { batchSize: 10 },
+    filterCriteria: {
+      filters: [{ pattern: '{"body":{"eventType":["ORDER_CREATED"]}}' }],
+    },
+  },
+  enrichment: enrichmentFn.functionArn,
+  target: stepFunction.stateMachineArn,
+  targetParameters: {
+    stepFunctionStateMachineParameters: {
+      invocationType: "FIRE_AND_FORGET",
+    },
+  },
+  roleArn: pipeRole.roleArn,
+});
+```
+
+| Use Pipes When | Use Rules + Targets When |
+| --- | --- |
+| Source is SQS/Kinesis/DynamoDB Stream | Source is custom events or AWS service events |
+| Need point-to-point processing | Need fan-out to multiple targets |
+| Want to eliminate glue Lambda | Complex routing logic needed |
+| Enrichment step is simple | Multiple rules with different patterns |
+
+---
+
+### 23. **What hidden/lesser-known EventBridge features matter in production?**
+
+**Answer:**
+
+| Feature | What It Does | Why It Matters |
+| --- | --- | --- |
+| **Content-based filtering** | Match on nested JSON fields, arrays, prefixes | Reduce target invocations by 90%+ |
+| **Input transformers** | Reshape event before delivery | Send only needed fields to target |
+| **Archive & replay** | Store events and replay to bus | Disaster recovery, reprocessing |
+| **Global endpoints** | Active-active multi-region | Automatic failover in <1min |
+| **Schema registry** | Auto-discover event schemas | Code generation for type safety |
+| **DLQ per rule** | Failed deliveries go to SQS | Don't lose events on target failure |
+
+> **Hidden Gem:** **Global endpoints** with health checks enable automatic failover between regions. Events are replicated and your producers don't need to change endpoints — EventBridge handles routing.

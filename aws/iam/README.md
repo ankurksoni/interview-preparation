@@ -670,3 +670,114 @@ const { Credentials } = await cognito.send(
 ```
 
 > This scopes each user to their own S3 prefix using the Cognito identity ID as a dynamic variable.
+
+---
+
+## Practical System Design Supplement
+
+---
+
+### 21. **How do you create IAM roles and policies with CDK?**
+
+**Answer:**
+
+```ts
+import * as iam from "aws-cdk-lib/aws-iam";
+
+// Least-privilege role for Lambda
+const lambdaRole = new iam.Role(this, "OrderProcessorRole", {
+  assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+  description: "Role for order processing Lambda",
+  maxSessionDuration: cdk.Duration.hours(1),
+});
+
+// Inline policy: specific to this function
+lambdaRole.addToPolicy(
+  new iam.PolicyStatement({
+    actions: ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query"],
+    resources: [
+      table.tableArn,
+      `${table.tableArn}/index/*`,
+    ],
+  }),
+);
+
+// Managed policy: shared across functions
+const readOnlyPolicy = new iam.ManagedPolicy(this, "ReadOnlyPolicy", {
+  statements: [
+    new iam.PolicyStatement({
+      actions: ["s3:GetObject", "s3:ListBucket"],
+      resources: [bucket.bucketArn, `${bucket.bucketArn}/*`],
+    }),
+  ],
+});
+
+lambdaRole.addManagedPolicy(readOnlyPolicy);
+
+// Permission boundary: enforce guardrails
+const boundary = new iam.ManagedPolicy(this, "Boundary", {
+  statements: [
+    new iam.PolicyStatement({
+      actions: ["*"],
+      resources: ["*"],
+      conditions: {
+        StringEquals: { "aws:RequestedRegion": ["us-east-1", "eu-west-1"] },
+      },
+    }),
+    new iam.PolicyStatement({
+      effect: iam.Effect.DENY,
+      actions: ["iam:CreateUser", "iam:DeleteRole", "organizations:*"],
+      resources: ["*"],
+    }),
+  ],
+});
+
+iam.PermissionsBoundary.of(this).apply(boundary);
+```
+
+---
+
+### 22. **What are IAM's important hidden features for production?**
+
+**Answer:**
+
+| Feature | What It Does | Why It Matters |
+| --- | --- | --- |
+| **IAM Access Analyzer** | Finds resources shared externally | Catch overly permissive policies |
+| **Service Control Policies (SCPs)** | Org-level guardrails | Prevent regions, services across accounts |
+| **Session tags** | Tags passed through STS AssumeRole | ABAC: attribute-based access control |
+| **Permission boundaries** | Max permissions a role can have | Delegate role creation safely |
+| **Condition keys** | Contextual policy restrictions | `aws:SourceIp`, `aws:RequestedRegion`, `aws:PrincipalTag` |
+| **Not-Action / Not-Resource** | Inverse matching in policies | Allow everything EXCEPT specific actions |
+| **Policy simulator** | Test policies before deployment | Validate access without real calls |
+| **Last accessed info** | When a permission was last used | Prune unused permissions |
+
+```ts
+// ABAC: Attribute-based access control with tags
+const abacPolicy = new iam.PolicyStatement({
+  actions: ["s3:GetObject", "s3:PutObject"],
+  resources: ["arn:aws:s3:::project-data/*"],
+  conditions: {
+    StringEquals: {
+      "s3:ExistingObjectTag/Project": "${aws:PrincipalTag/Project}",
+    },
+  },
+});
+// User with tag Project=alpha can only access objects tagged Project=alpha
+```
+
+---
+
+### 23. **What are IAM's cost and production considerations?**
+
+**Answer:** IAM itself is **free**, but poor IAM practices cost money indirectly:
+
+| Bad Practice | Cost Impact | Fix |
+| --- | --- | --- |
+| Overly broad `*` permissions | Security breach = massive cost | Least privilege, Access Analyzer |
+| No SCP guardrails | Accidental resource creation | SCPs to restrict regions/services |
+| Shared credentials | Impossible to audit who did what | Individual roles, CloudTrail |
+| Long-lived access keys | Key leak = crypto mining bills | Use roles + STS temporary credentials |
+| No MFA on root | Full account takeover risk | Enable MFA, lock root in safe |
+
+> **Production Tip:** Use `aws iam generate-service-last-accessed-details` to find which permissions a role actually uses. Remove unused permissions to tighten security.
