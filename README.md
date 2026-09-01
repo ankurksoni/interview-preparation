@@ -43,6 +43,11 @@ A curated collection of interview preparation material covering popular programm
 - [Amazon API Gateway](./aws/api-gateway/README.md) — REST vs HTTP vs WebSocket, Caching, Auth, Throttling, CDK Patterns
 - [CloudFormation & CDK](./aws/cloudformation-cdk/README.md) — IaC, Stacks, Constructs, Pipelines, Testing, Deployment Patterns
 
+## 📂 GraphQL
+
+- [Apollo GraphQL](./graphql/apollo/README.md) — Server & Client, Resolvers, Caching, DataLoader, Pagination, Federation
+- [WunderGraph](./graphql/wundergraph/README.md) — API Composition, Typed Operations, Auth, Caching, BFF Patterns
+
 ## 📂 OWASP Top 10
 
 [OWASP Top 10 with TypeScript Examples](./OWASP/README.md) — Security vulnerabilities with secure code examples
