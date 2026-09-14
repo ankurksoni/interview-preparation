@@ -19,6 +19,7 @@ A curated collection of interview preparation material covering popular programm
 - [MongoDB](./db/mongodb/README.md) — Schema design, Indexing, Aggregation, Sharding, Replication, Vector Search
 - [Redis](./db/redis/README.md) — Data Structures, Caching Patterns, Pub/Sub, Streams, Clustering, Distributed Locks
 - [PostgreSQL](./db/postgres/README.md) — Indexing, MVCC, Transactions, JSONB, CTEs, Window Functions, Partitioning
+- [TimescaleDB](./db/timescaledb/README.md) — Hypertables, Chunking, Compression, Continuous Aggregates, Retention Policies
 - [Apache Kafka](./db/kafka/README.md) — Topics, Partitions, Consumer Groups, Exactly-Once, Kafka Connect, Streams
 - [Elasticsearch](./db/elasticsearch/README.md) — Inverted Index, Analyzers, Sharding, Aggregations, ELK Stack, OpenSearch
 - [DynamoDB vs Redshift vs Redis vs PostgreSQL vs Kafka vs Elasticsearch — 100-Parameter Comparison](./db/comparison/README.md)
