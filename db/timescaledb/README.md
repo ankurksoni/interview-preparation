@@ -212,7 +212,29 @@ ORDER BY device_id, time DESC;
 
 ### 8. **How do you downsample/bucket time-series data?**
 
-**Answer:** Use `time_bucket()` — TimescaleDB's core function for grouping rows into fixed time intervals (like `date_trunc`, but far more flexible: arbitrary intervals, not just calendar units).
+**Answer:**
+
+**What downsampling actually is (small example first).** Downsampling means taking many high-frequency data points and collapsing them into fewer, lower-frequency points — usually by grouping them into fixed time windows ("buckets") and computing one summary value (avg, max, min, sum, count...) per window. You trade granularity for volume: you can't recover the original per-second reading, but you keep the *shape* of the data at a fraction of the size.
+
+Say a sensor reports temperature every minute:
+
+```
+09:00 → 20°C
+09:01 → 21°C
+09:02 → 22°C
+09:03 → 19°C
+09:04 → 20°C
+```
+
+If you downsample into 5-minute buckets using the average, all five readings collapse into one row:
+
+```
+09:00-09:05 bucket → avg = 20.4°C
+```
+
+A month of minute-level data (43,200 rows) becomes a month of 5-minute buckets (8,640 rows) — ~5x smaller, still representative for a chart or trend. That's the whole idea; TimescaleDB just gives you a purpose-built function to do the "group into fixed time windows" step correctly and efficiently.
+
+**Going deep — `time_bucket()`.** This is TimescaleDB's core function for that grouping step (like `date_trunc`, but far more flexible: arbitrary intervals, not just calendar units).
 
 ```sql
 -- Average temperature per 5-minute bucket, per device
@@ -241,7 +263,15 @@ FROM conditions
 GROUP BY 1;
 ```
 
-> **Interview signal:** `time_bucket()` vs `date_trunc()` is a favorite question. `date_trunc` only supports calendar-aligned units (hour, day, month). `time_bucket` supports **arbitrary intervals** (`'7 minutes'`, `'90 seconds'`) and per-bucket offsets.
+How it works under the hood:
+
+- **Bucket alignment.** By default, buckets are aligned to an origin (epoch/`2000-01-03` for calendar-based intervals), so `time_bucket('5 minutes', time)` always lands on `:00, :05, :10...` boundaries — not on whatever timestamp happened to be first in your data. This is what makes results deterministic and joinable across queries/devices.
+- **Arbitrary vs. calendar intervals.** For intervals ≤ 1 day (seconds, minutes, hours), `time_bucket` treats the interval as a fixed-duration window and can bucket by *any* value — `'90 seconds'`, `'7 minutes'`, `'13 hours'`. For month/year intervals, it falls back to calendar semantics (months have variable length) similar to `date_trunc`.
+- **Query planner awareness.** Because chunks are time-ranged, a `WHERE time > ...` predicate combined with `time_bucket` in the `SELECT`/`GROUP BY` lets Timescale prune irrelevant chunks *before* bucketing — downsampling a day out of a table with years of data doesn't scan the years.
+- **Continuous aggregates are built on this.** A continuous aggregate (`CREATE MATERIALIZED VIEW ... WITH (timescaledb.continuous)`) is essentially a `time_bucket()` query that Timescale incrementally maintains for you, so you don't recompute the rollup from raw rows on every read. If you find yourself running the same `time_bucket` query repeatedly on a dashboard, that's the sign to promote it to a continuous aggregate instead.
+- **Choosing the bucket size** is a trade-off: smaller buckets preserve more detail but downsample less (less storage/query win); larger buckets compress more aggressively but can hide spikes (e.g., a 1-hour avg can smooth over a 2-minute outage). Pick the bucket size based on what the consumer (dashboard, alert, model) actually needs to see.
+
+> **Interview signal:** `time_bucket()` vs `date_trunc()` is a favorite question. `date_trunc` only supports calendar-aligned units (hour, day, month). `time_bucket` supports **arbitrary intervals** (`'7 minutes'`, `'90 seconds'`) and per-bucket offsets. A strong follow-up: explain that continuous aggregates are just pre-computed, incrementally-refreshed `time_bucket` rollups — the mechanism, not a separate feature.
 
 ---
 
