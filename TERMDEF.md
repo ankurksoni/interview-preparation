@@ -489,3 +489,131 @@ Brief explanations with simple examples for common system design interview terms
 - **CALM Theorem** – "Consistency As Logical Monotonicity" — a program can be consistent without coordination if its logic is monotonic (only ever adds, never retracts information).
   *Example: A distributed "set union" operation (only adding elements) can be computed consistently without coordination, unlike a "delete" operation.*
 
+---
+
+## Traffic & API Architecture
+
+- **Load Shedding** – Deliberately dropping/rejecting a portion of incoming requests when the system is overloaded, to protect overall health.
+  *Example: A server returns `503` for non-critical requests once CPU usage passes 90%, so critical requests still get served.*
+- **Traffic Shaping** – Controlling the rate/pattern of outgoing or incoming traffic to smooth bursts.
+  *Example: A client library spaces out batch upload requests over 10 seconds instead of firing them all at once.*
+- **Token Bucket** – A rate-limiting algorithm where requests consume tokens from a bucket that refills at a fixed rate; bursts are allowed up to the bucket size.
+  *Example: A bucket holds 100 tokens, refills 10/sec — a burst of 100 requests succeeds instantly, then throttles to 10/sec.*
+- **Leaky Bucket** – A rate-limiting algorithm that processes requests at a fixed, constant rate, queuing or dropping excess — smooths bursts rather than allowing them.
+  *Example: Requests queue up and are drained at exactly 5/sec regardless of how fast they arrived.*
+- **Sliding Window Rate Limiting** – Counts requests in a moving time window (rather than fixed buckets) to avoid burst-at-boundary issues.
+  *Example: "100 requests per rolling 60-second window" instead of resetting the counter every minute on the clock.*
+- **Request Coalescing** – Merging multiple identical concurrent requests into a single upstream call, sharing the result.
+  *Example: 50 simultaneous cache-miss requests for the same key trigger only 1 DB query; the other 49 wait for and reuse that result.*
+- **Request Hedging** – Sending a duplicate request to a second backend if the first is slow, using whichever responds first, to cut tail latency.
+  *Example: If the primary replica doesn't respond in 50ms, fire the same read to a second replica and take the first response.*
+- **Reverse Proxy** – A server that sits in front of backend services, forwarding client requests to them (used for load balancing, TLS termination, caching).
+  *Example: Nginx terminates TLS and forwards requests to an internal app server on port 3000.*
+- **Layer 4 vs Layer 7 Load Balancing** – L4 balances based on IP/TCP-level info (fast, protocol-agnostic); L7 balances based on HTTP content (path, headers — smarter routing).
+  *Example: An L4 balancer routes by IP:port; an L7 balancer routes `/api/*` to one service and `/static/*` to another.*
+- **Long Polling** – Client holds a request open until the server has new data to return, then immediately reconnects.
+  *Example: A chat client sends a request that the server holds for up to 30s, responding as soon as a new message arrives.*
+- **Server-Sent Events (SSE)** – A one-way, persistent HTTP connection where the server pushes a stream of updates to the client.
+  *Example: A live stock-ticker page receives price updates over a single long-lived SSE connection.*
+- **Head-of-Line Blocking** – A delay where one slow/blocked item at the front of a queue/connection holds up everything behind it.
+  *Example: On HTTP/1.1, one slow request on a connection blocks subsequent requests queued behind it on the same connection.*
+- **Scatter-Gather** – A request pattern that "scatters" a query to multiple nodes/services in parallel, then "gathers" and merges their responses.
+  *Example: A search query is sent to all 10 shards in parallel, and results are merged and ranked before returning to the user.*
+
+---
+
+## AWS Architecture Patterns
+
+- **Well-Architected Framework** – AWS's set of design pillars (Operational Excellence, Security, Reliability, Performance Efficiency, Cost Optimization, Sustainability) for evaluating architectures.
+  *Example: A Well-Architected review flags a single-AZ RDS instance as a Reliability pillar risk.*
+- **Active-Active** – Two or more regions/instances simultaneously serve live traffic, each capable of handling full load.
+  *Example: Both `us-east-1` and `eu-west-1` accept writes and reads concurrently, with data replicated between them.*
+- **Active-Passive** – One region/instance serves traffic while a standby stays ready to take over on failure.
+  *Example: `us-east-1` serves all traffic; `us-west-2` stays warm and is promoted only during failover.*
+- **Pilot Light** – A minimal, always-on copy of critical core infrastructure in a DR region, scaled up only when disaster strikes.
+  *Example: A DR region keeps a database replica running but no app servers; EC2/ECS capacity is launched only during failover.*
+- **Warm Standby** – A scaled-down but fully functional replica environment running in the DR region, ready to scale up quickly.
+  *Example: The DR region runs 2 small app server instances continuously, scaled to full capacity within minutes of failover.*
+- **Cell-Based Architecture** – Partitioning a system into independent, isolated "cells," each serving a subset of users/traffic, to contain blast radius.
+  *Example: Users are sharded across 10 cells; a bug or overload in cell 3 only affects the users routed to it.*
+- **Landing Zone** – A pre-configured, secure, multi-account AWS environment baseline (networking, IAM, logging) used as the starting point for new accounts.
+  *Example: AWS Control Tower provisions a landing zone with a log archive account, security account, and guardrails applied automatically.*
+- **Hub-and-Spoke Architecture** – A central "hub" account/VPC connects to multiple "spoke" accounts/VPCs, centralizing shared services like networking or security.
+  *Example: A shared services VPC (hub) provides DNS and egress internet access to multiple application VPCs (spokes) via Transit Gateway.*
+- **Transit Gateway** – An AWS managed hub that interconnects many VPCs and on-premises networks through a single gateway, instead of a full mesh of peering connections.
+  *Example: 20 VPCs connect to one Transit Gateway instead of maintaining 190 individual VPC peering connections.*
+- **VPC Peering** – A direct, private network connection between two VPCs, routing traffic without going over the public internet.
+  *Example: VPC A and VPC B are peered so EC2 instances in each can communicate using private IPs.*
+- **PrivateLink / VPC Endpoints** – Private connectivity to AWS services (or another VPC's service) without traversing the public internet or requiring peering.
+  *Example: An EC2 instance calls the S3 API via a VPC endpoint, keeping traffic entirely within the AWS private network.*
+- **Lambda Cold Start** – The extra latency incurred when a serverless function must initialize a new execution environment before handling a request.
+  *Example: The first invocation after idle time takes 800ms to init the runtime, vs. 20ms for a "warm" invocation.*
+- **Reserved Concurrency** – Guarantees a Lambda function a fixed slice of concurrent execution capacity (and caps it), isolating it from other functions' scaling.
+  *Example: Setting reserved concurrency of 50 ensures this function can always scale to 50 but never more, protecting downstream DB connections.*
+- **Provisioned Concurrency** – Pre-initializes a set number of Lambda execution environments so they're always warm, eliminating cold starts for that capacity.
+  *Example: 10 provisioned instances stay warm so the first 10 concurrent requests always get sub-50ms response times.*
+- **Lambda Fan-Out** – A single Lambda invocation triggers many parallel downstream invocations/events.
+  *Example: One S3 upload event triggers a Lambda that publishes 5 separate SNS messages, each invoking a different processing Lambda.*
+- **DynamoDB Single-Table Design** – Modeling multiple entity types within one DynamoDB table using generic partition/sort keys, to support access patterns with fewer requests.
+  *Example: A table stores `USER#123` and `ORDER#456` items together, keyed so one query fetches a user and all their orders.*
+- **DynamoDB Adaptive Capacity** – DynamoDB automatically shifts throughput capacity toward partitions receiving disproportionate traffic to reduce throttling.
+  *Example: A hot partition getting 3x normal traffic temporarily gets boosted capacity without manual resharding.*
+
+---
+
+## Security Architecture (continued)
+
+- **Defense in Depth** – Layering multiple independent security controls so that a single failure doesn't fully compromise the system.
+  *Example: A request must pass a WAF, then network ACLs, then IAM auth, then application-level validation.*
+- **Mutual TLS (mTLS)** – Both client and server present and verify certificates, authenticating each other (not just the server, as in normal TLS).
+  *Example: Two internal microservices each present a certificate signed by an internal CA before a service-mesh connection is established.*
+- **Envelope Encryption** – Encrypting data with a data key, then encrypting that data key with a separate master key — limits exposure of the master key.
+  *Example: AWS KMS encrypts a local data key, which in turn encrypts a large file, so the file never touches the master key directly.*
+- **Secrets Management** – Securely storing, rotating, and controlling access to credentials/API keys/certificates rather than hardcoding them.
+  *Example: An app fetches its DB password at runtime from AWS Secrets Manager instead of reading it from a config file.*
+- **WAF (Web Application Firewall)** – Filters/blocks malicious HTTP traffic (e.g., SQL injection, XSS patterns) before it reaches the application.
+  *Example: AWS WAF blocks a request whose query string matches a known SQL-injection pattern.*
+- **DDoS Protection** – Mechanisms to detect and absorb/mitigate large-scale volumetric attacks meant to overwhelm a service.
+  *Example: AWS Shield automatically absorbs a volumetric UDP flood before it reaches the application load balancer.*
+
+---
+
+## Modern Architecture / AI Systems
+
+- **RAG (Retrieval-Augmented Generation)** – Augmenting an LLM's response by first retrieving relevant external documents/context and including them in the prompt.
+  *Example: A support chatbot retrieves the 3 most relevant help-center articles via vector search, then feeds them to the LLM alongside the user's question.*
+- **Vector Database** – A database optimized for storing and searching high-dimensional embedding vectors by similarity.
+  *Example: Pinecone/pgvector stores document embeddings and returns the top-5 nearest neighbors to a query embedding.*
+- **Embeddings** – Numeric vector representations of text/data that capture semantic meaning, enabling similarity comparison.
+  *Example: "king" and "queen" map to nearby vectors in embedding space, while "king" and "banana" map far apart.*
+- **Semantic Search** – Searching by meaning/intent (via embeddings) rather than exact keyword matching.
+  *Example: Searching "affordable laptop" also surfaces results containing "budget notebook" because their embeddings are close.*
+- **Hybrid Search** – Combining keyword (lexical) search with semantic (vector) search to get both precision and recall.
+  *Example: Merging BM25 keyword-match scores with vector-similarity scores to rank search results.*
+- **Re-Ranking** – A second pass that reorders an initial set of retrieved candidates using a more precise (often slower) model.
+  *Example: A cheap vector search returns 100 candidates; a cross-encoder re-ranker picks the true top 5 for the final prompt.*
+- **Semantic Caching** – Caching LLM responses keyed by the meaning of a query (via embedding similarity) rather than an exact string match.
+  *Example: "What's the capital of France?" and "France's capital city?" hit the same cached answer because their embeddings are near-identical.*
+- **Prompt Caching** – Caching the processed representation of a repeated prompt prefix (e.g., system prompt, long context) to skip reprocessing it on subsequent calls.
+  *Example: A 10,000-token system prompt is cached so each new user message only pays for processing the new tokens, not the whole prefix.*
+- **LLM Gateway** – A proxy layer in front of one or more LLM providers that handles routing, auth, rate limiting, logging, and fallback.
+  *Example: A gateway routes requests to OpenAI by default and automatically fails over to Anthropic if the primary provider errors.*
+- **Model Routing** – Dynamically selecting which model to use for a given request based on cost, complexity, or latency needs.
+  *Example: Simple classification requests route to a small/cheap model; complex reasoning requests route to a larger model.*
+- **Model Fallback** – Automatically retrying a failed/unavailable model call against an alternative model or provider.
+  *Example: If the primary model returns a 500 error, the gateway retries the same request against a backup model.*
+- **AI Observability** – Monitoring LLM-specific signals — token usage, latency, cost, output quality, hallucination rate — in addition to standard metrics.
+  *Example: A dashboard tracks average tokens-per-request and flags a spike in refused/empty responses.*
+- **Evaluation Pipelines** – Automated processes that score LLM outputs against test cases/rubrics to catch regressions before deployment.
+  *Example: A CI step runs 200 prompt/expected-answer pairs through the model and fails the build if accuracy drops below 90%.*
+- **Hallucination Mitigation** – Techniques (grounding in retrieved sources, citations, structured output, verification passes) to reduce an LLM generating false information.
+  *Example: Requiring the model to cite a specific retrieved document for every claim, and rejecting answers with no citation.*
+- **Agentic Architecture** – Systems where an LLM plans and executes multi-step actions using tools, rather than producing a single one-shot response.
+  *Example: An agent decides to call a search tool, then a calculator tool, then synthesizes a final answer — looping until the task is done.*
+- **AI Agent Memory** – Mechanisms for an agent to persist and recall information across turns or sessions beyond its immediate context window.
+  *Example: An agent stores "user prefers metric units" in a memory store and retrieves it in future conversations.*
+- **MCP (Model Context Protocol) Architecture** – A standardized protocol for connecting LLM applications to external tools/data sources in a pluggable way.
+  *Example: An MCP server exposes a "search_jira_tickets" tool that any MCP-compatible LLM client can discover and call.*
+- **Token Budget Management** – Tracking and constraining how many tokens a request/session/agent loop is allowed to consume.
+  *Example: An agent loop is capped at 50,000 tokens total; it stops and summarizes progress if it approaches the limit.*
+

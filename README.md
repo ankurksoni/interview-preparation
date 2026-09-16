@@ -52,3 +52,7 @@ A curated collection of interview preparation material covering popular programm
 ## 📂 OWASP Top 10
 
 [OWASP Top 10 with TypeScript Examples](./OWASP/README.md) — Security vulnerabilities with secure code examples
+
+## 📂 Software Architect
+
+[Software Architect Interview Questions & Answers](./architect/README.md) — System design trade-offs, distributed systems, scalability, resilience, data architecture, and architectural decision-making
