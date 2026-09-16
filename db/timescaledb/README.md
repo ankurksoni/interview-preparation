@@ -541,32 +541,53 @@ SELECT add_retention_policy('conditions', INTERVAL '5 years');
 
 ---
 
-### 19. **How do you resize an existing table into a hypertable without downtime?**
+### 19. **How do you resize an existing table into a hypertable without downtime? How do you resize chunk intervals afterward?**
 
-**Answer:** `create_hypertable()` on a table that already has data works directly — it partitions existing rows into chunks based on their timestamps. For very large existing tables where you want zero blocking, migrate via a new table + backfill.
+**Answer:** "Resizing" here covers two different operations that are often conflated in interviews:
+
+1. **Converting a plain table into a hypertable** — `create_hypertable()` on a table that already has data works directly. It scans existing rows, buckets them by timestamp into the configured chunk interval, and creates the chunk tables under the hood. This runs as a single `ALTER TABLE`-like operation that takes a brief lock, so for small-to-medium tables it's effectively instant; for very large tables you migrate via a new table + backfill to avoid blocking writes.
+
+2. **Resizing chunk time intervals on an already-existing hypertable** — the chunk interval (e.g. 1 day vs 1 week) is not fixed for life. You can change it going forward with `set_chunk_time_interval()`, which affects only *newly created* chunks; existing chunks keep their original size unless you explicitly reshape them.
 
 ```sql
--- Simple case: table has data already, convert it in place
+-- Convert an existing table in place (works if the table isn't huge / a short lock is acceptable)
 SELECT create_hypertable('conditions', by_range('time'), migrate_data => true);
 ```
 
 ```sql
--- Zero-downtime pattern for huge tables:
--- 1. Create new hypertable
-CREATE TABLE conditions_new (LIKE conditions INCLUDING ALL);
-SELECT create_hypertable('conditions_new', by_range('time'));
+-- Resize the chunk interval on an existing hypertable (applies only to future chunks)
+SELECT set_chunk_time_interval('conditions', INTERVAL '1 day');
+```
 
--- 2. Backfill in batches (avoids one giant long-running transaction/lock)
+> **Interview framing:** interviewers probe whether you know chunk interval changes are *not retroactive*. If old chunks were sized too large (causing slow queries/compression) or too small (causing chunk-count bloat), you must either let old data age out naturally under the new policy or actively reshape old chunks — Timescale doesn't silently re-chunk historical data for you.
+
+**How resizing existing (already-written) chunks is actually achieved**, since `set_chunk_time_interval()` alone won't touch them:
+
+```sql
+-- Zero-downtime pattern for huge tables — also the way to effectively
+-- "re-chunk" historical data to a new interval size:
+-- 1. Create a new hypertable with the desired (corrected) chunk interval
+CREATE TABLE conditions_new (LIKE conditions INCLUDING ALL);
+SELECT create_hypertable('conditions_new', by_range('time'), chunk_time_interval => INTERVAL '1 day');
+
+-- 2. Backfill in batches (avoids one giant long-running transaction/lock,
+--    and lets you throttle I/O instead of copying the whole table at once)
 INSERT INTO conditions_new
 SELECT * FROM conditions WHERE time BETWEEN '2025-01-01' AND '2025-02-01';
--- ... repeat per time range ...
+-- ... repeat per time range until fully backfilled ...
 
--- 3. Cut over application writes to conditions_new, then rename
+-- 3. Cut application writes over to conditions_new, then swap names
+--    so the table name your app queries never has to change
 BEGIN;
 ALTER TABLE conditions RENAME TO conditions_old;
 ALTER TABLE conditions_new RENAME TO conditions;
 COMMIT;
+
+-- 4. Once verified, drop the old table to reclaim space
+DROP TABLE conditions_old;
 ```
+
+This backfill-and-swap is the general-purpose tool for both problems: it's how you convert a huge existing table into a hypertable without a long lock, *and* it's how you rewrite historical data into differently-sized chunks — because `set_chunk_time_interval()` genuinely cannot resize chunks that already exist on disk.
 
 ---
 
