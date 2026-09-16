@@ -1,6 +1,6 @@
 # TimescaleDB Interview Questions & Answers
 
-A curated list of **TimescaleDB interview questions** — easy to hard difficulty with practical examples. Covers fundamentals, hypertables, chunking, compression, continuous aggregates, retention policies, and real-world time-series patterns.
+A curated list of **TimescaleDB interview questions** — easy to hard difficulty with practical examples. Covers fundamentals, hypertables, chunking, indexing, compression, continuous aggregates, retention policies, and real-world time-series patterns.
 
 ---
 
@@ -318,9 +318,155 @@ SELECT create_hypertable(
 
 ---
 
+## Indexing
+
+### 11. **What indexes does TimescaleDB create automatically on a hypertable?**
+
+**Answer:** When you run `create_hypertable()`, Timescale automatically creates a B-tree index on the partitioning ("time") column, unless one already exists. No other indexes are automatic — everything else (on `device_id`, `tenant_id`, composite columns, etc.) you must create yourself, exactly like plain Postgres, and it gets propagated to every chunk.
+
+```sql
+CREATE TABLE conditions (
+  time        TIMESTAMPTZ NOT NULL,
+  device_id   TEXT NOT NULL,
+  temperature DOUBLE PRECISION
+);
+
+SELECT create_hypertable('conditions', by_range('time'));
+-- ✅ Timescale auto-creates: CREATE INDEX ON conditions (time DESC);
+
+-- ❌ No index on device_id yet — you must add it yourself
+CREATE INDEX idx_conditions_device ON conditions (device_id, time DESC); -- speeds up per-device time-range scans
+```
+
+> **Interview signal:** a common trick question is "does Timescale index everything for me?" — no, only the time column. Query-pattern-specific indexes are still your job.
+
+---
+
+### 12. **Why is `(device_id, time DESC)` a better index than `(device_id, time ASC)` for time-series dashboards?**
+
+**Answer:** Most time-series queries ask for the **most recent** data first (`ORDER BY time DESC LIMIT N`, or `WHERE time > now() - INTERVAL '1 hour'`). A `DESC` index on time lets Postgres scan directly in that order without a separate sort step.
+
+```sql
+-- Matches "latest N readings for a device" without an extra sort
+CREATE INDEX idx_device_time_desc ON conditions (device_id, time DESC); -- avoids a Sort node in the query plan
+
+SELECT * FROM conditions
+WHERE device_id = 'sensor-1'
+ORDER BY time DESC
+LIMIT 10; -- index scan returns rows already in the right order
+```
+
+> `ASC` and `DESC` B-tree indexes can both be scanned backward by Postgres, so this matters less on vanilla Postgres than people think — but explicit `DESC` still documents intent and avoids edge cases with multi-column sort direction mismatches.
+
+---
+
+### 13. **How do you index for "filter by device, range by time" queries — the most common time-series access pattern?**
+
+**Answer:** Put the equality-filtered column(s) first in a composite index, then the range-filtered/sorted time column last. This lets Postgres do an efficient index range scan: jump straight to the matching `device_id`, then scan a contiguous time range within it.
+
+```sql
+-- Equality column first, time range column last — the standard time-series index shape
+CREATE INDEX idx_conditions_device_time ON conditions (device_id, time DESC); -- supports WHERE device_id = ? AND time > ?
+
+EXPLAIN ANALYZE
+SELECT * FROM conditions
+WHERE device_id = 'sensor-1' AND time > now() - INTERVAL '1 day'
+ORDER BY time DESC;
+-- Index Scan using idx_conditions_device_time -- no separate filter/sort step needed
+```
+
+> **Rule of thumb:** equality columns before range columns in a composite index — reversing the order (`time, device_id`) forces a much less selective scan since time is queried as a range, not an exact match.
+
+---
+
+### 14. **How do indexes interact with chunk exclusion — do you need an index on every chunk?**
+
+**Answer:** Indexes are created per chunk automatically when you index the hypertable — Timescale propagates the `CREATE INDEX` statement to every existing chunk and to all future chunks. Chunk exclusion (via the time predicate) happens *before* indexes are even considered: Timescale first prunes whole chunks outside the queried time range, then uses each remaining chunk's own index to narrow rows within it.
+
+```sql
+-- One statement, applied to every chunk (existing + future)
+CREATE INDEX idx_conditions_device ON conditions (device_id); -- Timescale fans this out per-chunk automatically
+
+-- Two-stage pruning in one query:
+-- 1) chunk exclusion via WHERE time > ... (whole chunks skipped)
+-- 2) per-chunk index scan via WHERE device_id = ... (rows skipped within remaining chunks)
+SELECT * FROM conditions
+WHERE time > now() - INTERVAL '2 days' AND device_id = 'sensor-1';
+```
+
+> This two-stage pruning (chunk exclusion, then per-chunk index) is why Timescale queries stay fast even as total row count grows into the billions — the index only ever has to work over the handful of chunks that survived exclusion.
+
+---
+
+### 15. **How do you index JSONB tag/metadata columns for filtering?**
+
+**Answer:** Use a **GIN index**, same as plain Postgres, when you need to filter on arbitrary keys inside a `JSONB` column (e.g., tags, labels, dynamic metadata).
+
+```sql
+CREATE TABLE metrics (
+  time  TIMESTAMPTZ NOT NULL,
+  tags  JSONB
+);
+SELECT create_hypertable('metrics', by_range('time'));
+
+-- GIN index for containment/key-existence queries on JSONB
+CREATE INDEX idx_metrics_tags ON metrics USING GIN (tags); -- speeds up @>, ?, ?| operators
+
+SELECT * FROM metrics
+WHERE tags @> '{"region": "us-east"}' AND time > now() - INTERVAL '1 day'; -- containment lookup uses the GIN index
+```
+
+> **Trade-off:** GIN indexes are larger and slower to write than B-tree, and on a high-ingest hypertable they add real overhead per insert — only add one if you actually filter on JSONB contents, not just store it.
+
+---
+
+### 16. **Should you index columns you only ever filter through compressed `segmentby`?**
+
+**Answer:** No — for a compressed chunk, `compress_segmentby` already lets Timescale skip whole segments without decompressing them, which does the same job a B-tree index would do on the equivalent uncompressed data. Adding a redundant B-tree index on that column on a compressed hypertable wastes space and doesn't meaningfully speed up equality lookups already served by segment exclusion.
+
+```sql
+ALTER TABLE conditions SET (
+  timescaledb.compress,
+  timescaledb.compress_segmentby = 'device_id', -- already gives fast equality filtering on device_id
+  timescaledb.compress_orderby   = 'time DESC'
+);
+
+-- Redundant on compressed chunks — segmentby already covers this access pattern
+-- CREATE INDEX idx_conditions_device ON conditions (device_id);
+
+-- Still worth indexing separately if you filter on a column NOT in segmentby/orderby
+CREATE INDEX idx_conditions_location ON conditions (location); -- not covered by segment exclusion
+```
+
+> **Interview framing:** this is a favorite "do you actually understand compression" question — segmentby is functionally an index substitute for equality filters on compressed data, so don't double up unless you query a different column.
+
+---
+
+### 17. **How do you find unused or redundant indexes on a hypertable?**
+
+**Answer:** Same tooling as plain Postgres — `pg_stat_user_indexes` tracks scan counts per index, but remember it's tracked **per chunk**, so you typically want to aggregate across all chunks belonging to a hypertable.
+
+```sql
+-- Find indexes with zero (or very low) scans across all chunks of a hypertable
+SELECT
+  indexrelname,
+  sum(idx_scan) AS total_scans
+FROM pg_stat_user_indexes
+WHERE relname LIKE '_hyper_%_chunk' -- underlying chunk tables
+GROUP BY indexrelname
+ORDER BY total_scans ASC; -- near-zero scans = candidate for removal
+
+-- Timescale helper view — index sizes across all chunks of a hypertable, summed
+SELECT * FROM hypertable_index_size('idx_conditions_device_time');
+```
+
+> Every unused index still costs write throughput (each insert updates every index) and storage per chunk — pruning unused indexes matters even more on hypertables because the cost is multiplied across potentially hundreds of chunks.
+
+---
+
 ## Compression
 
-### 11. **How does TimescaleDB compression work?**
+### 18. **How does TimescaleDB compression work?**
 
 **Answer:** TimescaleDB compresses chunks using a **hybrid row-columnar** format. Older/cold chunks are rewritten so that each column is stored contiguously (like a columnar database) and compressed with type-specific algorithms (delta-of-delta for timestamps, Gorilla for floats, dictionary encoding for low-cardinality text). This routinely achieves **90–96% storage reduction** on typical metrics/IoT data.
 
@@ -349,7 +495,7 @@ FROM hypertable_compression_stats('conditions');
 
 ---
 
-### 12. **What is the tradeoff of compression — can you still write to compressed chunks?**
+### 19. **What is the tradeoff of compression — can you still write to compressed chunks?**
 
 **Answer:** Yes, but with caveats:
 
@@ -364,7 +510,7 @@ FROM hypertable_compression_stats('conditions');
 
 ---
 
-### 13. **Walk through choosing `compress_segmentby` and `compress_orderby` for a real schema.**
+### 20. **Walk through choosing `compress_segmentby` and `compress_orderby` for a real schema.**
 
 **Answer:** Consider a multi-tenant metrics table:
 
@@ -405,7 +551,7 @@ ALTER TABLE metrics SET (
 
 ## Continuous Aggregates & Rollups
 
-### 14. **What is a continuous aggregate, and how is it different from a materialized view?**
+### 21. **What is a continuous aggregate, and how is it different from a materialized view?**
 
 **Answer:** A **continuous aggregate** is a special materialized view that TimescaleDB **incrementally and automatically refreshes** as new data arrives, instead of recomputing from scratch. It's built specifically for `time_bucket()` rollups (hourly, daily averages, etc.) over hypertables.
 
@@ -441,7 +587,7 @@ SELECT add_continuous_aggregate_policy('conditions_hourly',
 
 ---
 
-### 15. **What is "real-time aggregation" in continuous aggregates?**
+### 22. **What is "real-time aggregation" in continuous aggregates?**
 
 **Answer:** By default, when you `SELECT` from a continuous aggregate, Timescale **transparently unions** the materialized (already-rolled-up) data with a live aggregate over the raw data that hasn't been materialized yet. This means querying `conditions_hourly` always reflects the very latest inserts, not just what's been refreshed so far — without you writing any extra SQL.
 
@@ -457,7 +603,7 @@ ALTER MATERIALIZED VIEW conditions_hourly SET (timescaledb.materialized_only = t
 
 ---
 
-### 16. **How do you build hierarchical rollups (hourly → daily → monthly)?**
+### 23. **How do you build hierarchical rollups (hourly → daily → monthly)?**
 
 **Answer:** Continuous aggregates can be built **on top of other continuous aggregates**, so you don't re-scan raw data for every rollup level.
 
@@ -489,7 +635,7 @@ SELECT add_continuous_aggregate_policy('conditions_daily',
 
 ## Data Lifecycle Management
 
-### 17. **How do you automatically expire old data?**
+### 24. **How do you automatically expire old data?**
 
 **Answer:** `add_retention_policy()` schedules a background job that drops entire chunks once all their data is older than the given interval. Because it operates at the **chunk level** (dropping whole files), it's dramatically cheaper than `DELETE FROM ... WHERE time < ...`, which has to scan and remove individual rows and leaves dead tuples for `VACUUM`.
 
@@ -515,7 +661,7 @@ SELECT drop_chunks('conditions', older_than => INTERVAL '90 days');
 
 ---
 
-### 18. **What is a typical "hot-warm-cold" data lifecycle policy in TimescaleDB?**
+### 25. **What is a typical "hot-warm-cold" data lifecycle policy in TimescaleDB?**
 
 **Answer:** Combine compression, tiering, and retention into stages matched to how data is actually accessed:
 
@@ -541,7 +687,7 @@ SELECT add_retention_policy('conditions', INTERVAL '5 years');
 
 ---
 
-### 19. **How do you resize an existing table into a hypertable without downtime? How do you resize chunk intervals afterward?**
+### 26. **How do you resize an existing table into a hypertable without downtime? How do you resize chunk intervals afterward?**
 
 **Answer:** "Resizing" here covers two different operations that are often conflated in interviews:
 
@@ -593,7 +739,7 @@ This backfill-and-swap is the general-purpose tool for both problems: it's how y
 
 ## Advanced Topics
 
-### 20. **What is `pg_partman` vs TimescaleDB's native chunking, and when would you still consider plain Postgres partitioning?**
+### 27. **What is `pg_partman` vs TimescaleDB's native chunking, and when would you still consider plain Postgres partitioning?**
 
 **Answer:** `pg_partman` is a general-purpose Postgres extension that automates *native* partition management (creating/dropping partitions on a schedule) without requiring hypertables. TimescaleDB's chunking is purpose-built for time-series and adds compression, continuous aggregates, and time-series-aware query planning on top — capabilities `pg_partman` alone doesn't provide.
 
@@ -611,7 +757,7 @@ This backfill-and-swap is the general-purpose tool for both problems: it's how y
 
 ---
 
-### 21. **How do JOINs between a hypertable and a regular relational table work?**
+### 28. **How do JOINs between a hypertable and a regular relational table work?**
 
 **Answer:** Exactly like normal Postgres — a hypertable is queried with standard SQL, so you can `JOIN` it against normal tables (dimension tables, metadata, users) with zero special syntax. This is one of TimescaleDB's biggest selling points over purpose-built time-series databases (like InfluxDB) that can't easily join against relational data.
 
@@ -635,7 +781,7 @@ GROUP BY d.location;
 
 ---
 
-### 22. **How does `approx_percentile` work, and why use it instead of `percentile_cont`?**
+### 29. **How does `approx_percentile` work, and why use it instead of `percentile_cont`?**
 
 **Answer:** `approx_percentile` is one of TimescaleDB's **hyperfunctions** — it computes an approximate percentile from a **T-Digest sketch** (built by `percentile_agg`) instead of sorting the full dataset. Exact `percentile_cont` requires holding and sorting every row per group in memory, which is infeasible once a group spans millions/billions of rows. The T-Digest sketch is small, mergeable, and gives accuracy within a small, tunable error bound — more than good enough for p95/p99 latency or sensor dashboards.
 
@@ -676,7 +822,7 @@ GROUP BY day, device_id;
 
 ---
 
-### 23. **How does `candlestick_agg` compute OHLC data, and when would you use it?**
+### 30. **How does `candlestick_agg` compute OHLC data, and when would you use it?**
 
 **Answer:** `candlestick_agg` is a hyperfunction purpose-built for financial/tick-style data — it computes **Open/High/Low/Close (OHLC)** plus volume in a single aggregation pass over `(time, price, volume)` tuples, instead of writing four separate `first()`/`max()`/`min()`/`last()` queries (or worse, self-joins) to derive each value.
 
@@ -721,7 +867,7 @@ GROUP BY hour, symbol;
 
 ---
 
-### 24. **How would you design a schema for a multi-tenant SaaS metrics platform on TimescaleDB?**
+### 31. **How would you design a schema for a multi-tenant SaaS metrics platform on TimescaleDB?**
 
 **Answer:** A realistic system-design-style question. Key decisions to call out:
 
@@ -773,7 +919,7 @@ SELECT add_retention_policy('metrics_5min', INTERVAL '2 years');   -- rollups ke
 
 ---
 
-### 25. **What are common pitfalls / anti-patterns when using TimescaleDB?**
+### 32. **What are common pitfalls / anti-patterns when using TimescaleDB?**
 
 **Answer:**
 
@@ -790,7 +936,7 @@ SELECT add_retention_policy('metrics_5min', INTERVAL '2 years');   -- rollups ke
 
 ---
 
-### 26. **How does TimescaleDB fit into a high-availability / scaling architecture?**
+### 33. **How does TimescaleDB fit into a high-availability / scaling architecture?**
 
 **Answer:** Because TimescaleDB is a Postgres extension, it inherits Postgres's HA and scaling tools directly — no separate ecosystem to learn.
 
