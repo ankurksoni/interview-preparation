@@ -635,21 +635,53 @@ GROUP BY d.location;
 
 ---
 
-### 22. **How do hyperfunctions like `approx_percentile` and `candlestick_agg` help at scale?**
+### 22. **How does `approx_percentile` work, and why use it instead of `percentile_cont`?**
 
-**Answer:** TimescaleDB ships **hyperfunctions** — advanced aggregate functions optimized for large-scale analytics that would otherwise require expensive exact computation or manual application-side logic.
+**Answer:** `approx_percentile` is one of TimescaleDB's **hyperfunctions** — it computes an approximate percentile from a **T-Digest sketch** (built by `percentile_agg`) instead of sorting the full dataset. Exact `percentile_cont` requires holding and sorting every row per group in memory, which is infeasible once a group spans millions/billions of rows. The T-Digest sketch is small, mergeable, and gives accuracy within a small, tunable error bound — more than good enough for p95/p99 latency or sensor dashboards.
 
 ```sql
--- Approximate percentiles using T-Digest — accurate, but far cheaper than exact percentile_cont
--- on billions of rows
+-- percentile_agg() builds a compact T-Digest sketch per group;
+-- approx_percentile() reads a percentile out of that sketch
 SELECT
   device_id,
-  approx_percentile(0.95, percentile_agg(temperature)) AS p95_temp
+  approx_percentile(0.95, percentile_agg(temperature)) AS p95_temp,
+  approx_percentile(0.99, percentile_agg(temperature)) AS p99_temp
 FROM conditions
 WHERE time > now() - INTERVAL '7 days'
 GROUP BY device_id;
 
--- Financial candlestick (OHLC) aggregation in one pass — common in fintech interviews
+-- Because the sketch is mergeable, you can pre-aggregate it in a continuous
+-- aggregate and cheaply roll it up further (hourly -> daily) without re-scanning
+-- raw rows or losing accuracy from double-approximation
+CREATE MATERIALIZED VIEW conditions_hourly_stats
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket('1 hour', time) AS bucket,
+  device_id,
+  percentile_agg(temperature) AS temp_sketch   -- stores the sketch, not the raw values
+FROM conditions
+GROUP BY bucket, device_id;
+
+-- Roll the hourly sketches up into a daily p95 later — merges sketches instead
+-- of re-reading raw data
+SELECT
+  time_bucket('1 day', bucket) AS day,
+  device_id,
+  approx_percentile(0.95, rollup(temp_sketch)) AS p95_temp
+FROM conditions_hourly_stats
+GROUP BY day, device_id;
+```
+
+> **Why this matters:** storing the *sketch* (via `percentile_agg`) rather than the final number in a continuous aggregate lets you merge/re-aggregate percentiles correctly across time buckets — you can't average or re-derive a p95 from already-computed p95 values, but you *can* merge T-Digest sketches with `rollup()`.
+
+---
+
+### 23. **How does `candlestick_agg` compute OHLC data, and when would you use it?**
+
+**Answer:** `candlestick_agg` is a hyperfunction purpose-built for financial/tick-style data — it computes **Open/High/Low/Close (OHLC)** plus volume in a single aggregation pass over `(time, price, volume)` tuples, instead of writing four separate `first()`/`max()`/`min()`/`last()` queries (or worse, self-joins) to derive each value.
+
+```sql
+-- One pass builds a candlestick object per (day, symbol) bucket
 SELECT
   time_bucket('1 day', time) AS day,
   symbol,
@@ -657,20 +689,39 @@ SELECT
 FROM trades
 GROUP BY day, symbol;
 
--- Extract OHLC values from the candlestick
-SELECT day, symbol,
-  open(candlestick), high(candlestick), low(candlestick), close(candlestick)
+-- Extract individual OHLC + volume fields from the candlestick object
+SELECT
+  day,
+  symbol,
+  open(candlestick)         AS open_price,
+  high(candlestick)         AS high_price,
+  low(candlestick)          AS low_price,
+  close(candlestick)        AS close_price,
+  volume(candlestick)       AS total_volume
 FROM (
-  SELECT time_bucket('1 day', time) AS day, symbol, candlestick_agg(time, price, volume) AS candlestick
-  FROM trades GROUP BY day, symbol
+  SELECT
+    time_bucket('1 day', time) AS day,
+    symbol,
+    candlestick_agg(time, price, volume) AS candlestick
+  FROM trades
+  GROUP BY day, symbol
 ) t;
+
+-- Candlesticks are mergeable too — store per-minute candlesticks in a continuous
+-- aggregate, then roll them up into hourly/daily candles without re-touching raw trades
+SELECT
+  time_bucket('1 hour', day) AS hour,
+  symbol,
+  rollup(candlestick) AS hourly_candlestick
+FROM minute_candlesticks
+GROUP BY hour, symbol;
 ```
 
-> **Why this matters:** exact `percentile_cont` requires sorting the entire dataset in memory per group — infeasible at time-series scale. `approx_percentile` uses a mergeable sketch (T-Digest), so it's both fast and can itself be **incrementally rolled up** in continuous aggregates.
+> **Why this matters:** without `candlestick_agg`, computing OHLC requires either 4 separate window/aggregate functions or an ordered-set self-join — both far more expensive at scale. Because the candlestick object is mergeable via `rollup()`, you get the same incremental-rollup benefit as `approx_percentile`: compute once at fine granularity, merge cheaply at coarser granularities.
 
 ---
 
-### 23. **How would you design a schema for a multi-tenant SaaS metrics platform on TimescaleDB?**
+### 24. **How would you design a schema for a multi-tenant SaaS metrics platform on TimescaleDB?**
 
 **Answer:** A realistic system-design-style question. Key decisions to call out:
 
@@ -722,7 +773,7 @@ SELECT add_retention_policy('metrics_5min', INTERVAL '2 years');   -- rollups ke
 
 ---
 
-### 24. **What are common pitfalls / anti-patterns when using TimescaleDB?**
+### 25. **What are common pitfalls / anti-patterns when using TimescaleDB?**
 
 **Answer:**
 
@@ -739,7 +790,7 @@ SELECT add_retention_policy('metrics_5min', INTERVAL '2 years');   -- rollups ke
 
 ---
 
-### 25. **How does TimescaleDB fit into a high-availability / scaling architecture?**
+### 26. **How does TimescaleDB fit into a high-availability / scaling architecture?**
 
 **Answer:** Because TimescaleDB is a Postgres extension, it inherits Postgres's HA and scaling tools directly — no separate ecosystem to learn.
 
