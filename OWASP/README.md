@@ -1,39 +1,28 @@
-# OWASP Top 10 — 2021 Edition with TypeScript Examples
+# OWASP Top 10 Interview Questions & Answers
 
-The **OWASP Top 10** is a standard awareness document for developers and web application security. Below is the **2021 edition** (the latest release), explained with practical **TypeScript** code snippets.
-
-> **Note:** The OWASP Top 10 was last updated in 2021. The categories below reflect the official 2021 list. Check [owasp.org](https://owasp.org/Top10/) for future updates.
+A curated list of **OWASP Top 10 (2021 edition)** interview questions covering the most critical web application security risks, with practical **TypeScript** code examples of insecure vs. secure implementations. Check [owasp.org](https://owasp.org/Top10/) for future updates to the list.
 
 ---
 
-## 1. Broken Access Control
+## 1. **What is Broken Access Control and how do you prevent it?**
 
-**Risk:** Attackers can access or modify unauthorized data.
-
-### Example 1 – Insecure Direct Object Reference (IDOR)
+**Answer:** Broken Access Control happens when an application doesn't properly enforce restrictions on what authenticated users are allowed to do, letting attackers access or modify data they don't own. Prevent it by checking resource ownership and role on every request, not just at the UI layer.
 
 ```ts
-// ❌ Insecure
+// ❌ No ownership check
 app.get("/orders/:id", async (req, res) => {
   const order = await getOrderById(req.params.id);
-  res.json(order); // No user ownership check
+  res.json(order);
 });
 
-// ✅ Secure
+// ✅ Verify the requester owns the resource
 app.get("/orders/:id", async (req, res) => {
   const order = await getOrderById(req.params.id);
   if (order.userId !== req.user.id) return res.status(403).send("Forbidden");
   res.json(order);
 });
-```
 
-### Example 2 – Missing Role Check
-
-```ts
-// ❌
-app.post("/admin/deleteUser", deleteUser);
-
-// ✅
+// ✅ Also check role for privileged routes
 app.post("/admin/deleteUser", (req, res) => {
   if (req.user.role !== "admin") return res.status(403).send("Forbidden");
   deleteUser(req, res);
@@ -42,77 +31,52 @@ app.post("/admin/deleteUser", (req, res) => {
 
 ---
 
-## 2. Cryptographic Failures
+## 2. **What are Cryptographic Failures and how do you avoid them?**
 
-**Risk:** Weak encryption, no encryption, or key exposure.
-
-### Example 1 – Password Storage
+**Answer:** Cryptographic Failures (formerly "Sensitive Data Exposure") cover weak or missing encryption, and secrets that leak because they're hardcoded or stored in plaintext. Always hash passwords with a slow algorithm like bcrypt and load secrets from environment variables or a secrets manager, never from source code.
 
 ```ts
-// ❌
+// ❌ Plaintext password, hardcoded secret
 await db.insert({ username, password });
-
-// ✅
-const hashed = await bcrypt.hash(password, 12);
-await db.insert({ username, password: hashed });
-```
-
-### Example 2 – Hardcoded Secrets
-
-```ts
-// ❌
 const jwtSecret = "my-secret";
 
-// ✅
+// ✅ Hash passwords, load secrets from env
+const hashed = await bcrypt.hash(password, 12);
+await db.insert({ username, password: hashed });
 const jwtSecret = process.env.JWT_SECRET!;
 ```
 
 ---
 
-## 3. Injection
+## 3. **What is Injection and how do you prevent it?**
 
-**Risk:** Unsanitized input interpreted as code.
-
-### Example 1 – SQL Injection
+**Answer:** Injection flaws occur when untrusted input is interpreted as part of a command or query — SQL, NoSQL, OS commands, etc. Prevent it with parameterized queries and by never trusting user input to shape a query's structure.
 
 ```ts
-// ❌
+// ❌ SQL injection via string interpolation
 db.query(`SELECT * FROM users WHERE email = '${req.body.email}'`);
 
-// ✅
+// ✅ Parameterized query
 db.query("SELECT * FROM users WHERE email = $1", [req.body.email]);
-```
 
-### Example 2 – NoSQL Injection
-
-```ts
-// ❌
+// ❌ NoSQL injection — operators can be passed as objects
 User.find({ username: req.body.username });
 
-// ✅
+// ✅ Sanitize/validate input first
 User.find({ username: sanitize(req.body.username) });
 ```
 
 ---
 
-## 4. Insecure Design
+## 4. **What is Insecure Design and how does it differ from an implementation bug?**
 
-**Risk:** Lack of secure defaults, validations, and secure design thinking.
-
-### Example 1 – No Rate Limiting
+**Answer:** Insecure Design is a category of risk stemming from missing or ineffective security controls at the *design* stage — a flaw in the architecture itself, not just a coding mistake. Even a flawless implementation of an insecure design is still vulnerable. Mitigate it with rate limiting, threat modeling, and input validation built in from the start.
 
 ```ts
-// ❌
-app.post("/login", loginHandler);
-
-// ✅
+// ✅ Rate-limit sensitive endpoints
 app.post("/login", rateLimiter, loginHandler);
-```
 
-### Example 2 – No Input Validation
-
-```ts
-// ✅ with Zod
+// ✅ Validate input shape with a schema (Zod)
 const schema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
@@ -123,67 +87,50 @@ if (!result.success) return res.status(400).json(result.error);
 
 ---
 
-## 5. Security Misconfiguration
+## 5. **What is Security Misconfiguration?**
 
-**Risk:** Misconfigured headers, unnecessary services, detailed errors.
-
-### Example 1 – Stack Trace Exposure
+**Answer:** Security Misconfiguration covers missing hardening across any layer of the stack — verbose error output, unnecessary services or routes left exposed, default credentials, or misconfigured headers. Fix it with generic error responses, server-side logging, and auth middleware on every sensitive route.
 
 ```ts
-// ❌
+// ❌ Leaks stack trace to the client
 app.use((err, req, res) => res.status(500).send(err.stack));
 
-// ✅
+// ✅ Generic response, log details server-side
 app.use((err, req, res) => {
   res.status(500).send("Server error");
   logger.error(err.stack);
 });
-```
 
-### Example 2 – Open Admin Panel
-
-```ts
-// ✅
+// ✅ Protect admin/static routes with auth middleware
 app.use("/admin", authMiddleware, express.static("admin"));
 ```
 
 ---
 
-## 6. Vulnerable and Outdated Components
+## 6. **How do you handle Vulnerable and Outdated Components?**
 
-**Risk:** Using libraries with known CVEs.
-
-### Example 1 – Audit dependencies
+**Answer:** This risk comes from using libraries or frameworks with known CVEs. Mitigate it by auditing dependencies regularly and wiring automated scanning into CI so vulnerable packages are caught before they ship.
 
 ```bash
 npm audit fix
 ```
 
-### Example 2 – Use Tools
-
-- Snyk
-- Dependabot
+Also use automated tools like **Snyk** or **Dependabot** to catch vulnerable dependencies continuously.
 
 ---
 
-## 7. Identification and Authentication Failures
+## 7. **What are Identification and Authentication Failures?**
 
-**Risk:** Poor login logic, session mismanagement.
-
-### Example 1 – JWT Expiry
+**Answer:** This category covers weaknesses in login logic and session management — tokens that never expire, sessions that aren't invalidated on logout, weak password policies, or missing brute-force protection.
 
 ```ts
-// ❌
+// ❌ Token never expires
 jwt.sign(payload, secret);
 
-// ✅
+// ✅ Set an expiry
 jwt.sign(payload, secret, { expiresIn: "1h" });
-```
 
-### Example 2 – No Logout Invalidation
-
-```ts
-// ✅
+// ✅ Invalidate session on logout
 app.post("/logout", (req, res) => {
   req.session.destroy(() => res.send("Logged out"));
 });
@@ -191,13 +138,12 @@ app.post("/logout", (req, res) => {
 
 ---
 
-## 8. Software and Data Integrity Failures
+## 8. **What are Software and Data Integrity Failures?**
 
-**Risk:** Unauthorized code execution from updates, plugins.
-
-### Example 1 – Subresource Integrity
+**Answer:** This risk covers code and infrastructure that don't verify integrity — unsigned software updates, plugins from untrusted sources, or CI/CD pipelines without adequate access control, allowing malicious code to be introduced. Use Subresource Integrity for third-party scripts and require review before merging into protected branches.
 
 ```html
+<!-- ✅ Subresource Integrity for third-party scripts -->
 <script
   src="https://cdn.com/lib.js"
   integrity="sha384-..."
@@ -205,9 +151,8 @@ app.post("/logout", (req, res) => {
 ></script>
 ```
 
-### Example 2 – CI/CD Protections
-
 ```yaml
+# ✅ Require PR review before merging into a protected branch
 on:
   pull_request:
     branches: [main]
@@ -215,41 +160,31 @@ on:
 
 ---
 
-## 9. Security Logging and Monitoring Failures
+## 9. **What are Security Logging and Monitoring Failures?**
 
-**Risk:** No detection of breaches or attacks.
-
-### Example 1 – Login Logging
+**Answer:** Without adequate logging and monitoring, breaches go undetected — sometimes for months — because there's no record of suspicious activity to alert on. Log authentication events and sensitive actions, and feed them into a monitoring/alerting pipeline.
 
 ```ts
+// ✅ Log failed logins and sensitive actions
 if (!validUser) {
   logger.warn(`Failed login for ${req.body.username}`);
 }
-```
-
-### Example 2 – Audit Trail
-
-```ts
 logger.info(`User ${req.user.id} updated profile`);
 ```
 
 ---
 
-## 10. Server-Side Request Forgery (SSRF)
+## 10. **What is Server-Side Request Forgery (SSRF) and how do you prevent it?**
 
-**Risk:** Server is tricked into accessing internal resources.
-
-### Example 1 – Whitelisted URLs
+**Answer:** SSRF occurs when an attacker tricks the server into making requests to unintended destinations, including internal-only resources. Prevent it by whitelisting allowed destinations and rejecting requests that resolve to private/internal IP ranges.
 
 ```ts
+// ✅ Whitelist allowed destinations
 const allowed = ["https://api.example.com"];
 if (!allowed.includes(req.query.url)) return res.status(400).send("Blocked");
 axios.get(req.query.url);
-```
 
-### Example 2 – DNS Validation
-
-```ts
+// ✅ Reject requests resolving to internal/private IP ranges
 const hostname = new URL(req.query.url).hostname;
 const ip = (await dns.lookup(hostname)).address;
 if (ip.startsWith("169.254") || ip.startsWith("127.") || ip.startsWith("10.")) {
@@ -259,17 +194,9 @@ if (ip.startsWith("169.254") || ip.startsWith("127.") || ip.startsWith("10.")) {
 
 ---
 
-## 📌 Summary
+## Summary
 
-Always:
-
-- Apply **principle of least privilege**
-- Use **automated scanning tools**
+- Apply the **principle of least privilege**
+- Use **automated scanning tools** (dependency and static analysis)
 - Perform **secure code reviews**
-- Build with **security by design**
-
-Stay safe and ship secure software! 🚀
-
----
-
-_Created by a passionate backend engineer using TypeScript & Node.js to build secure apps._
+- Build with **security by design**, not as an afterthought
