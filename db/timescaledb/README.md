@@ -130,6 +130,32 @@ SELECT create_hypertable('raw_events', by_range('ts_ms'), chunk_time_interval =>
 
 > **Always use `TIMESTAMPTZ`**, same guidance as plain Postgres — avoid timezone bugs entirely by storing UTC and converting on display.
 
+**Setting the chunk interval at creation time:** you don't have to accept the 7-day default and change it later with `set_chunk_time_interval()` (see Q4) — pass `chunk_time_interval` directly to `create_hypertable()` up front, which is the more common pattern in real schemas:
+
+```sql
+-- TIMESTAMPTZ/TIMESTAMP/DATE columns: pass an INTERVAL
+SELECT create_hypertable(
+  'metrics',
+  by_range('time'),
+  chunk_time_interval => INTERVAL '1 day'
+);
+
+-- Integer/bigint (epoch) columns: pass a plain number in the column's own units
+SELECT create_hypertable(
+  'raw_events',
+  by_range('ts_ms'),
+  chunk_time_interval => 86400000  -- 1 day, in milliseconds — no INTERVAL literal here
+);
+```
+
+> **Gotcha:** the type of `chunk_time_interval` must match the partitioning column's type family. `TIMESTAMPTZ`/`TIMESTAMP`/`DATE` columns take an `INTERVAL` value; `BIGINT`/`INTEGER` columns take a raw integer expressed in *whatever unit that column already uses* (ms, µs, or a plain sequence id) — Timescale has no idea a `BIGINT` column means "milliseconds" unless you tell it via the interval size you pass.
+
+Other data-type details interviewers probe for:
+
+- **`TIMESTAMP` (no time zone) is discouraged**: it's accepted, but you inherit the classic Postgres footgun of ambiguous local time on DST transitions — always prefer `TIMESTAMPTZ`.
+- **Integer/epoch partitioning has a trade-off**: it's faster to insert (no timezone conversion) and common for IoT/embedded pipelines, but you lose calendar-aware functions like `time_bucket('1 month', ...)`, `now()`-relative queries, and DST-aware bucketing — you're on your own for unit conversions in every query.
+- **`time_bucket()` vs `date_trunc()`**: for grouping/rollups, Timescale's `time_bucket(INTERVAL, time_col)` is preferred over Postgres's `date_trunc()` because it supports arbitrary bucket widths (e.g., `'15 minutes'`, `'6 hours'`) instead of only fixed calendar units, and it works transparently on both timestamp and integer time columns.
+
 ---
 
 ## Core Operations
